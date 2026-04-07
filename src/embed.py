@@ -17,7 +17,7 @@ def main():
     parser.add_argument(
         "--model",
         required=True,
-        choices=["scgpt_spatial", "nicheformer", "loki_text", "loki_image"],
+        choices=["scgpt_spatial", "nicheformer", "loki"],
         help="Model to use for embedding.",
     )
     parser.add_argument(
@@ -58,6 +58,27 @@ def main():
         default=64,
         help="Batch size for inference (default: 64).",
     )
+    parser.add_argument(
+        "--spatial-dir",
+        default=None,
+        help="(loki) Path to a Visium spatial/ folder; enables image embedding.",
+    )
+    parser.add_argument(
+        "--housekeeping-genes",
+        default=None,
+        help="(loki) CSV with a 'genesymbol' column; genes to exclude from text encoding.",
+    )
+    parser.add_argument(
+        "--library-id",
+        default=None,
+        help="(loki) Key under adata.uns['spatial'] (default: first).",
+    )
+    parser.add_argument(
+        "--patch-size",
+        type=int,
+        default=16,
+        help="(loki) H&E patch side length in pixels (default: 16).",
+    )
 
     args = parser.parse_args()
 
@@ -73,7 +94,20 @@ def main():
             batch_size=args.batch_size,
             device=args.device,
         )
-    elif args.model in ("nicheformer", "loki_text", "loki_image"):
+    elif args.model == "loki":
+        from src.adapters.loki import run
+
+        run(
+            input_path=args.input,
+            output_dir=args.output,
+            model_dir=args.model_dir,
+            spatial_dir=args.spatial_dir,
+            housekeeping_genes_path=args.housekeeping_genes,
+            library_id=args.library_id,
+            patch_size=args.patch_size,
+            device=args.device,
+        )
+    elif args.model == "nicheformer":
         print(f"Error: Model '{args.model}' is not yet implemented.", file=sys.stderr)
         sys.exit(1)
 
