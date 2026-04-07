@@ -1,0 +1,8 @@
+data/
+models/
+output/
+plans/
+references/
+
+__pycache__
+.python-version
