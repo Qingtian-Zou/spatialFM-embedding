@@ -21,7 +21,7 @@ pip install torch>=2.5.1 numpy anndata>=0.10 scanpy scipy scikit-learn einops
 
 ### Model Weights
 
-Download the scGPT-spatial weights and place them in `models/scgpt_spatial/`:
+Download the [scGPT-spatial weights](https://github.com/bowang-lab/scGPT-spatial?tab=readme-ov-file#-model-weights-) and place them in `models/scgpt_spatial/`:
 
 ```
 models/scgpt_spatial/
