@@ -12,8 +12,6 @@ A unified framework for extracting cell embeddings from spatial omics foundation
 
 ## Setup
 
-Requires Python managed via [pyenv](https://github.com/pyenv/pyenv). The project uses a pyenv virtualenv named `spatialFMs` (see `.python-version`).
-
 ```bash
 # Install dependencies
 pip install torch>=2.5.1 numpy anndata>=0.10 scanpy scipy scikit-learn einops
@@ -21,7 +19,7 @@ pip install torch>=2.5.1 numpy anndata>=0.10 scanpy scipy scikit-learn einops
 
 ### Model Weights
 
-Download the [scGPT-spatial weights](https://github.com/bowang-lab/scGPT-spatial?tab=readme-ov-file#-model-weights-) and place them in `models/scgpt_spatial/`:
+Download the [scGPT-spatial weights](https://github.com/bowang-lab/scGPT-spatial?tab=readme-ov-file#-model-weights-) and place them in `model_weights/scgpt_spatial/`:
 
 ```
 models/scgpt_spatial/
@@ -40,8 +38,7 @@ python src/embed.py \
   --model scgpt_spatial \
   --input data.h5ad \
   --output output/ \
-  --model-dir models/scgpt_spatial/ \
-  --device cpu
+  --model-dir model_weights/scgpt_spatial/ \
 ```
 
 ### CLI Options
@@ -89,9 +86,3 @@ pytest tests/test_scgpt_spatial_tokenizer.py -v
 ```
 
 Most tests use lightweight synthetic fixtures and run without model weights or sample data. Tests that require external files are skipped automatically via `requires_model_weights` and `requires_sample_data` markers.
-
-## Project Documents
-
-- [task_plan.md](task_plan.md) &mdash; Implementation roadmap
-- [docs/unified_embedding_framework.md](docs/unified_embedding_framework.md) &mdash; Feasibility assessment and cross-cutting concerns
-- [docs/model_comparison.md](docs/model_comparison.md) &mdash; Model comparison table
