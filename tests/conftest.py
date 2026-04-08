@@ -15,12 +15,18 @@ import scipy.sparse as sp
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODEL_DIR = PROJECT_ROOT / "models" / "scgpt_spatial"
+LOKI_MODEL_DIR = PROJECT_ROOT / "models" / "loki"
 DATA_DIR = PROJECT_ROOT / "data"
 SAMPLE_H5AD = DATA_DIR / "GSE244084" / "GSM7806336" / "GSM7806336.h5ad"
+SAMPLE_SPATIAL_DIR = DATA_DIR / "GSE244084" / "GSM7806336" / "GSM7806336_spatial"
 
 
 def _has_model_weights() -> bool:
     return (MODEL_DIR / "best_model.pt").exists()
+
+
+def _has_loki_weights() -> bool:
+    return (LOKI_MODEL_DIR / "checkpoint.pt").exists()
 
 
 def _has_sample_data() -> bool:
@@ -30,6 +36,10 @@ def _has_sample_data() -> bool:
 requires_model_weights = pytest.mark.skipif(
     not _has_model_weights(),
     reason="Model weights not found at models/scgpt_spatial/",
+)
+requires_loki_weights = pytest.mark.skipif(
+    not _has_loki_weights(),
+    reason="Loki weights not found at models/loki/checkpoint.pt",
 )
 requires_sample_data = pytest.mark.skipif(
     not _has_sample_data(),
