@@ -8,7 +8,7 @@ A unified framework for extracting cell embeddings from spatial omics foundation
 |---|---|---|---|
 | **scGPT-spatial** | Transformer + MoE | 512 | Implemented |
 | **Nicheformer** | Transformer MLM | 512 | Planned |
-| **Loki** (text / image) | Vision-language COCA ViT-L-14 | 768 | Planned |
+| **Loki** (text / image) | Vision-language COCA ViT-L-14 | 768 | Implemented |
 
 ## Setup
 
@@ -34,18 +34,28 @@ These files are gitignored and must be obtained separately.
 ## Usage
 
 ```bash
+# scGPT-spatial
 python src/embed.py \
   --model scgpt_spatial \
   --input data.h5ad \
   --output output/ \
-  --model-dir model_weights/scgpt_spatial/ \
+  --model-dir model_weights/scgpt_spatial/
+
+# Loki (text-only; add --spatial-dir for image embeddings)
+python src/embed.py \
+  --model loki \
+  --input data.h5ad \
+  --output output/ \
+  --model-dir model_weights/loki/
 ```
 
 ### CLI Options
 
+#### General Options
+
 | Flag | Default | Description |
 |---|---|---|
-| `--model` | *(required)* | `scgpt_spatial`, `nicheformer`, `loki_text`, or `loki_image` |
+| `--model` | *(required)* | `scgpt_spatial`, `nicheformer`, or `loki` |
 | `--input` | *(required)* | Path to input `.h5ad` file |
 | `--output` | *(required)* | Output directory for embedding files |
 | `--model-dir` | *(required)* | Path to model weights directory |
@@ -53,6 +63,24 @@ python src/embed.py \
 | `--gene-col` | `feature_name` | Column in `adata.var` for gene names, or `index` |
 | `--max-length` | `1200` | Maximum sequence length |
 | `--batch-size` | `64` | Batch size for inference |
+
+#### Loki-specific Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--spatial-dir` | *(none)* | Path to Visium `spatial/` folder (see below); enables image embedding |
+| `--housekeeping-genes` | *(none)* | CSV with a `genesymbol` column; genes to exclude from text encoding |
+| `--library-id` | *(auto)* | Key under `adata.uns['spatial']` (default: first found) |
+| `--patch-size` | `16` | H&E patch side length in pixels |
+
+The `--spatial-dir` folder should be a standard Visium `spatial/` directory containing:
+
+```
+spatial/
+  scalefactors_json.json   # scale factors (including tissue_hires_scalef)
+  tissue_hires_image.png   # high-resolution H&E image
+  tissue_positions.csv     # barcode-to-pixel coordinate mapping
+```
 
 ### Output Formats
 
@@ -67,13 +95,21 @@ src/
   embed.py              # CLI entry point
   adapters/
     scgpt_spatial.py    # scGPT-spatial adapter
+    loki.py             # Loki adapter (text + image paths)
   models/
     scgpt_spatial/      # model code (with patches for torchtext and flash_attn compatibility)
+    loki/               # Loki model code (COCA ViT-L-14)
 ```
 
 ### scGPT-spatial Pipeline
 
 Input `.h5ad` &rarr; slide-level mean normalization &rarr; per-gene population z-score &rarr; 51-bin quantile binning &rarr; tokenization via `GeneVocab` &rarr; transformer inference &rarr; 512-dim cell embeddings stored in `adata.obsm["X_scgpt_spatial"]`.
+
+### Loki Pipeline
+
+**Text path:** Input `.h5ad` &rarr; top-50 genes per cell ranked by expression &rarr; gene-name sentence &rarr; COCA text encoder &rarr; 768-dim embeddings stored in `adata.obsm["X_loki_text"]`.
+
+**Image path** (enabled via `--spatial-dir`): H&E image &rarr; per-cell patch extraction using spatial coordinates &rarr; COCA image encoder &rarr; 768-dim embeddings stored in `adata.obsm["X_loki_image"]`.
 
 ## Testing
 
