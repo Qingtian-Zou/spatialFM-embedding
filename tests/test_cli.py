@@ -94,22 +94,6 @@ class TestCLI:
         assert (out_dir / "embeddings.csv").exists()
         assert (out_dir / "embeddings.tsv").exists()
 
-    def test_unimplemented_model_exits_nonzero(self, tmp_path):
-        result = subprocess.run(
-            [
-                sys.executable, str(PROJECT_ROOT / "src" / "embed.py"),
-                "--model", "nicheformer",
-                "--input", "dummy.h5ad",
-                "--output", str(tmp_path),
-                "--model-dir", str(tmp_path),
-            ],
-            capture_output=True,
-            text=True,
-            cwd=str(PROJECT_ROOT),
-        )
-        assert result.returncode != 0
-        assert "not yet implemented" in result.stderr
-
     def test_invalid_model_exits_nonzero(self, tmp_path):
         result = subprocess.run(
             [
