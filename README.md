@@ -19,14 +19,19 @@ pip install torch>=2.5.1 numpy anndata>=0.10 scanpy scipy scikit-learn einops
 
 ### Model Weights
 
-Download the [scGPT-spatial weights](https://github.com/bowang-lab/scGPT-spatial?tab=readme-ov-file#-model-weights-) and place them in `model_weights/scgpt_spatial/`:
+Download model weights:
+ - `model_weights/scgpt_spatial/`: [scGPT-spatial weights](https://github.com/bowang-lab/scGPT-spatial?tab=readme-ov-file#-model-weights-)
+ - `model_weights/loki/`: [Loki weights](https://github.com/GuangyuWangLab2021/Loki?tab=readme-ov-file#pretrained-weights) &rarr; [checkpoint.pt](https://huggingface.co/WangGuangyuLab/Loki/blob/main/checkpoint.pt)
 
 ```
-models/scgpt_spatial/
-  best_model.pt        # 220 MB checkpoint
-  vocab.json           # ~60,700 gene vocabulary
-  args.json            # model hyperparameters
-  all_dict_mean_std.csv  # normalization statistics
+models/
+  scgpt_spatial/
+    best_model.pt        # 220 MB checkpoint
+    vocab.json           # ~60,700 gene vocabulary
+    args.json            # model hyperparameters
+    all_dict_mean_std.csv  # normalization statistics
+  loki/
+    checkpoint.pt        # 7.2 GB checkpoint
 ```
 
 These files are gitignored and must be obtained separately.
@@ -38,14 +43,14 @@ These files are gitignored and must be obtained separately.
 python src/embed.py \
   --model scgpt_spatial \
   --input data.h5ad \
-  --output output/ \
+  --output output/scgpt_spatial/ \
   --model-dir model_weights/scgpt_spatial/
 
 # Loki (text-only; add --spatial-dir for image embeddings)
 python src/embed.py \
   --model loki \
   --input data.h5ad \
-  --output output/ \
+  --output output/loki/ \
   --model-dir model_weights/loki/
 ```
 
