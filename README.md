@@ -91,6 +91,8 @@ spatial/
 
 Each run produces four output files: `.h5ad`, `.npy`, `.csv`, and `.tsv`.
 
+Loki processes expression data and spatial context separately, and it will only produce embeddings for the expression data by default. When `--spatial-dir` is specified, additional embeddings for the spatial context will be produced as well, so there can be 2 sets of output files except for `.h5ad`. For `.h5ad`, expression embeddings are saved as `adata.obsm["X_loki_text"]` and spatial embeddings are saved as `adata.obsm["X_loki_image"]`, so there is only one `.h5ad` file.
+
 ## Architecture
 
 The project uses an **adapter pattern**: each model has a wrapper in `src/adapters/` exposing a `run()` function. The CLI dispatches to the appropriate adapter based on `--model`.

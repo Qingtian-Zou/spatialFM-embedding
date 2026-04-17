@@ -117,6 +117,9 @@ def run(
         AnnData with embeddings in ``obsm['X_loki_text']`` and, when applicable,
         ``obsm['X_loki_image']``.
     """
+    # sc.read_h5ad may emit "Variable names are not unique" UserWarning when the
+    # input H5AD has duplicate gene symbols; var_names_make_unique() below
+    # resolves it. The warning is harmless and cannot be suppressed at the source.
     adata = sc.read_h5ad(input_path)
     adata.var_names_make_unique()
 
