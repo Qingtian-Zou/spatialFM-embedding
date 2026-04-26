@@ -1,6 +1,9 @@
 """Loki preprocessing helpers (top-50 gene strings + image patch segmentation).
 
-Vendored from references/Loki/src/loki/preprocess.py.
+Vendored from references/Loki/src/loki/preprocess.py with one bug fix in
+``segment_patches``: upstream swapped x/y when unpacking the per-spot
+coordinates, causing patches to be cropped at the wrong pixel. See the
+inline comment in that function.
 """
 
 import os
@@ -46,7 +49,12 @@ def segment_patches(img_array, coord, patch_dir, height=20, width=20):
     yrange, xrange = img_array.shape[:2]
 
     for spot_idx in coord.index:
-        ycenter, xcenter = coord.loc[spot_idx, ["pixel_x", "pixel_y"]]
+        # Diverges from upstream (references/Loki/src/loki/preprocess.py): upstream
+        # unpacks as ``ycenter, xcenter = coord[..., ["pixel_x", "pixel_y"]]``,
+        # which swaps the axes. Our adapter sets ``pixel_x`` from the column index
+        # (x-axis) and ``pixel_y`` from the row index (y-axis), so the correct
+        # unpacking is x first, then y.
+        xcenter, ycenter = coord.loc[spot_idx, ["pixel_x", "pixel_y"]]
 
         x1 = round(xcenter - width / 2)
         y1 = round(ycenter - height / 2)

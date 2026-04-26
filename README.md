@@ -6,9 +6,9 @@ A unified framework for extracting cell embeddings from spatial omics foundation
 
 | Model | Type | Embedding Dim | Status |
 |---|---|---|---|
-| **scGPT-spatial** | Transformer + MoE | 512 | Implemented |
-| **Nicheformer** | Transformer MLM | 512 | Planned |
-| **Loki** (text / image) | Vision-language COCA ViT-L-14 | 768 | Implemented |
+| [**scGPT-spatial**](https://github.com/bowang-lab/scGPT-spatial) | Transformer + MoE | 512 | Implemented |
+| [**Nicheformer**](https://github.com/theislab/nicheformer) | Transformer MLM | 512 | Planned |
+| [**Loki** (text / image)](https://github.com/GuangyuWangLab2021/Loki) | Vision-language COCA ViT-L-14 | 768 | Implemented |
 
 ## Setup
 
@@ -117,6 +117,12 @@ Input `.h5ad` &rarr; slide-level mean normalization &rarr; per-gene population z
 **Text path:** Input `.h5ad` &rarr; top-50 genes per cell ranked by expression &rarr; gene-name sentence &rarr; COCA text encoder &rarr; 768-dim embeddings stored in `adata.obsm["X_loki_text"]`.
 
 **Image path** (enabled via `--spatial-dir`): H&E image &rarr; per-cell patch extraction using spatial coordinates &rarr; COCA image encoder &rarr; 768-dim embeddings stored in `adata.obsm["X_loki_image"]`.
+
+### Patches Applied to Upstream Code
+
+Where our vendored copies diverge from the upstream references:
+
+- **Loki — `src/models/loki/preprocess.py::segment_patches`**: fixed an x/y swap when unpacking per-spot pixel coordinates (`ycenter, xcenter = coord[..., ["pixel_x", "pixel_y"]]` &rarr; `xcenter, ycenter = ...`). Without this fix, image patches are cropped at transposed pixel locations whenever a spot is not on the image diagonal, so all `X_loki_image` embeddings would reflect the wrong tissue region.
 
 ## Testing
 
