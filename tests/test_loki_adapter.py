@@ -133,6 +133,97 @@ class TestAttachVisium:
 
 
 # ---------------------------------------------------------------------------
+# Resolve spatial — image dtype/channel normalization
+# ---------------------------------------------------------------------------
+
+def _adata_with_hires(hires):
+    ad = anndata.AnnData(
+        X=sp.csr_matrix(np.ones((2, 3), dtype=np.float32)),
+        obs=pd.DataFrame(index=["AAA-1", "BBB-1"]),
+        var=pd.DataFrame(index=["G0", "G1", "G2"]),
+    )
+    ad.obsm["spatial"] = np.array([[15, 10], [25, 20]])
+    ad.uns["spatial"] = {
+        "loki": {
+            "images": {"hires": hires},
+            "scalefactors": {"tissue_hires_scalef": 1.0, "spot_diameter_fullres": 10},
+        }
+    }
+    return ad
+
+
+class TestResolveSpatial:
+    def test_passes_uint8_through(self):
+        from src.adapters.loki import _resolve_spatial
+
+        rng = np.random.default_rng(0)
+        hires = rng.integers(0, 256, size=(40, 50, 3), dtype=np.uint8)
+        ad = _adata_with_hires(hires)
+
+        img, _, _ = _resolve_spatial(ad, spatial_dir=None, library_id="loki")
+
+        assert img.dtype == np.uint8
+        np.testing.assert_array_equal(img, hires)
+
+    def test_rescales_float01(self):
+        from src.adapters.loki import _resolve_spatial
+
+        hires = np.full((40, 50, 3), 0.5, dtype=np.float32)
+        ad = _adata_with_hires(hires)
+
+        img, _, _ = _resolve_spatial(ad, spatial_dir=None, library_id="loki")
+
+        assert img.dtype == np.uint8
+        # 0.5 * 255 = 127.5 → uint8 truncates to 127
+        assert img.min() == 127 and img.max() == 127
+
+    def test_handles_uint16(self):
+        from src.adapters.loki import _resolve_spatial
+
+        hires = np.full((40, 50, 3), 32768, dtype=np.uint16)
+        ad = _adata_with_hires(hires)
+
+        img, _, _ = _resolve_spatial(ad, spatial_dir=None, library_id="loki")
+
+        assert img.dtype == np.uint8
+        # 32768 / 256 = 128
+        assert img.min() == 128 and img.max() == 128
+
+    def test_strips_alpha(self):
+        from src.adapters.loki import _resolve_spatial
+
+        rng = np.random.default_rng(1)
+        rgb = rng.integers(0, 256, size=(40, 50, 3), dtype=np.uint8)
+        alpha = np.full((40, 50, 1), 255, dtype=np.uint8)
+        hires = np.concatenate([rgb, alpha], axis=2)
+        ad = _adata_with_hires(hires)
+
+        img, _, _ = _resolve_spatial(ad, spatial_dir=None, library_id="loki")
+
+        assert img.dtype == np.uint8
+        assert img.shape == (40, 50, 3)
+        np.testing.assert_array_equal(img, rgb)
+
+    def test_clips_out_of_range_floats(self):
+        from src.adapters.loki import _resolve_spatial
+
+        hires = np.full((40, 50, 3), 0.5, dtype=np.float32)
+        hires[0, 0] = -0.1
+        hires[0, 1] = 1.5
+        ad = _adata_with_hires(hires)
+
+        img, _, _ = _resolve_spatial(ad, spatial_dir=None, library_id="loki")
+
+        assert img.dtype == np.uint8
+        assert img.min() == 0
+        assert img.max() == 255
+        # outliers saturate cleanly; bulk pixels still ~127
+        assert (img[0, 0] == 0).all()
+        assert (img[0, 1] == 255).all()
+        assert img[1:, :].min() == 127 and img[1:, :].max() == 127
+
+
+# ---------------------------------------------------------------------------
 # End-to-end (requires real Loki weights)
 # ---------------------------------------------------------------------------
 

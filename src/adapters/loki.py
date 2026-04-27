@@ -67,7 +67,22 @@ def _resolve_spatial(
     spatial_dir: Optional[str],
     library_id: Optional[str],
 ):
-    """Return (img_array, coord_df, library_id) or None if image path unavailable."""
+    """Return (img_array, coord_df, library_id) or None if image path unavailable.
+
+    The returned ``img_array`` is always **3-channel RGB uint8** in ``[0, 255]``,
+    regardless of how the hires image was cached in ``adata.uns['spatial']``.
+    OmiCLIP's image transform (``Resize → CenterCrop → ToTensor → OpenAI-CLIP
+    Normalize``) divides uint8 PIL pixels by 255 internally, so the on-disk PNGs
+    written by ``segment_patches`` must be uint8 RGB for the embeddings to be
+    meaningful. Conversion rules:
+
+    - ``uint8`` passes through unchanged.
+    - ``float32`` / ``float64`` is treated as the matplotlib/scanpy ``[0, 1]``
+      convention: rescaled by 255 and clipped to ``[0, 255]``.
+    - ``uint16`` (e.g. 16-bit slide scans) is divided by 256.
+    - Any other dtype is clipped to ``[0, 255]`` and cast to uint8.
+    - ``(H, W, 4)`` RGBA arrays drop the alpha channel.
+    """
     if "spatial" not in adata.obsm or "spatial" not in adata.uns:
         if spatial_dir is None:
             return None
@@ -76,6 +91,14 @@ def _resolve_spatial(
     lib = library_id or next(iter(adata.uns["spatial"]))
     entry = adata.uns["spatial"][lib]
     img = np.asarray(entry["images"]["hires"])
+    if img.dtype in (np.float32, np.float64):
+        img = (img * 255.0).clip(0, 255).astype(np.uint8)
+    elif img.dtype == np.uint16:
+        img = (img / 256).clip(0, 255).astype(np.uint8)
+    elif img.dtype != np.uint8:
+        img = np.clip(img, 0, 255).astype(np.uint8)
+    if img.ndim == 3 and img.shape[2] == 4:
+        img = img[:, :, :3]
     scalef = entry["scalefactors"]["tissue_hires_scalef"]
 
     coords = adata.obsm["spatial"]  # columns: (col, row) in full-res pixels

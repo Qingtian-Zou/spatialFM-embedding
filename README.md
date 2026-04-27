@@ -118,6 +118,8 @@ Input `.h5ad` &rarr; slide-level mean normalization &rarr; per-gene population z
 
 **Image path** (enabled via `--spatial-dir`): H&E image &rarr; per-cell patch extraction using spatial coordinates &rarr; COCA image encoder &rarr; 768-dim embeddings stored in `adata.obsm["X_loki_image"]`.
 
+The saved per-spot patches are 3-channel RGB **uint8** PNGs because OmiCLIP's image transform (`Resize → CenterCrop → ToTensor → OpenAI-CLIP Normalize`) is calibrated for that format — `ToTensor` divides uint8 PIL pixels by 255 internally. The adapter's `_resolve_spatial` normalizes the hires image to uint8 RGB at load time, so both input routes (Visium PNG via `PIL.Image.open` and the in-memory cache from `adata.uns['spatial']`) produce equivalent patches regardless of the source dtype (uint8, float `[0, 1]`, uint16) or channel count (RGB or RGBA).
+
 ### Patches Applied to Upstream Code
 
 Where our vendored copies diverge from the upstream references:

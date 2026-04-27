@@ -41,7 +41,9 @@ def segment_patches(img_array, coord, patch_dir, height=20, width=20):
     """Crop ``height x width`` patches centered at each (pixel_x, pixel_y) coord
     and save as ``<spot_id>_hires.png`` under ``patch_dir``.
 
-    Out-of-range patches are skipped (no file written).
+    ``img_array`` is expected to be ``uint8`` with values in ``[0, 255]`` — the
+    Loki adapter's ``_resolve_spatial`` enforces this contract. Out-of-range
+    patches are skipped (no file written).
     """
     if not os.path.exists(patch_dir):
         os.makedirs(patch_dir)
