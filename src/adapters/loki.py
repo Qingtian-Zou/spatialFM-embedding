@@ -182,6 +182,7 @@ def run(
     model, preprocess, tokenizer = load_model(str(Path(model_dir) / "checkpoint.pt"), device)
 
     # --- Text path -------------------------------------------------------
+    print("Processing text...")
     if housekeeping_genes_path:
         hk_df = pd.read_csv(housekeeping_genes_path)
     else:
@@ -200,6 +201,7 @@ def run(
 
     # --- Image path ------------------------------------------------------
     if spatial_resolved is not None:
+        print("Text done. Processing image...")
         img_array, coord_df, _ = spatial_resolved
         patch_dir = out / "patches"
         segment_patches(img_array, coord_df, str(patch_dir), height=patch_size, width=patch_size)

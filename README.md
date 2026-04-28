@@ -24,7 +24,7 @@ Download model weights:
  - `model_weights/loki/`: [Loki weights](https://github.com/GuangyuWangLab2021/Loki?tab=readme-ov-file#pretrained-weights) &rarr; [checkpoint.pt](https://huggingface.co/WangGuangyuLab/Loki/blob/main/checkpoint.pt)
 
 ```
-models/
+model_weights/
   scgpt_spatial/
     best_model.pt        # 220 MB checkpoint
     vocab.json           # ~60,700 gene vocabulary

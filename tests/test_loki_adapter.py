@@ -114,6 +114,32 @@ class TestSegmentPatches:
         assert not (tmp_path / "spot_oob_y_hires.png").exists()
         assert not (tmp_path / "spot_oob_x_hires.png").exists()
 
+    def test_threaded_matches_sequential(self, tmp_path):
+        from src.models.loki.preprocess import segment_patches
+
+        rng = np.random.default_rng(0)
+        img = rng.integers(0, 256, size=(200, 200, 3), dtype=np.uint8)
+        n = 50
+        coord = pd.DataFrame(
+            {
+                "pixel_x": rng.integers(20, 180, size=n),
+                "pixel_y": rng.integers(20, 180, size=n),
+            },
+            index=[f"spot_{i}" for i in range(n)],
+        )
+
+        seq_dir = tmp_path / "seq"
+        par_dir = tmp_path / "par"
+        segment_patches(img, coord, str(seq_dir), height=16, width=16, n_workers=1)
+        segment_patches(img, coord, str(par_dir), height=16, width=16, n_workers=4)
+
+        seq_files = sorted(p.name for p in seq_dir.iterdir())
+        par_files = sorted(p.name for p in par_dir.iterdir())
+        assert seq_files == par_files
+        assert len(seq_files) == n
+        for name in seq_files:
+            assert (seq_dir / name).read_bytes() == (par_dir / name).read_bytes()
+
 
 # ---------------------------------------------------------------------------
 # Visium spatial attach (no model required)
