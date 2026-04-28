@@ -1,8 +1,18 @@
 """Loki preprocessing helpers (top-50 gene strings + image patch segmentation).
 
-Vendored from references/Loki/src/loki/preprocess.py with one bug fix in
-``segment_patches``: upstream swapped x/y when unpacking the per-spot
-coordinates, causing patches to be cropped at the wrong pixel. See the
+Vendored from references/Loki/src/loki/preprocess.py with one fix in
+``segment_patches``. Upstream uses a non-intuitive convention where the
+``pixel_x`` / ``pixel_y`` column names are *swapped* relative to their
+meanings: its ``load_data_for_annotation`` writes rows into ``pixel_x``
+and cols into ``pixel_y``, and ``segment_patches`` then unpacks them with
+a matching swap (``ycenter, xcenter = coord[..., ["pixel_x", "pixel_y"]]``).
+The two swaps cancel, so the OmiCLIP model was trained on correctly
+aligned patches.
+
+Our adapter (``src/adapters/loki.py``) populates the coord DataFrame with
+intuitive naming — ``pixel_x`` = x = col, ``pixel_y`` = y = row — which
+breaks that cancellation. To restore agreement with the model's training
+distribution, ``segment_patches`` here unpacks x first, then y. See the
 inline comment in that function.
 """
 
@@ -51,11 +61,15 @@ def segment_patches(img_array, coord, patch_dir, height=20, width=20):
     yrange, xrange = img_array.shape[:2]
 
     for spot_idx in coord.index:
-        # Diverges from upstream (references/Loki/src/loki/preprocess.py): upstream
-        # unpacks as ``ycenter, xcenter = coord[..., ["pixel_x", "pixel_y"]]``,
-        # which swaps the axes. Our adapter sets ``pixel_x`` from the column index
-        # (x-axis) and ``pixel_y`` from the row index (y-axis), so the correct
-        # unpacking is x first, then y.
+        # Diverges from upstream (references/Loki/src/loki/preprocess.py:80), which
+        # unpacks as ``ycenter, xcenter = coord[..., ["pixel_x", "pixel_y"]]``.
+        # That swap is internally consistent with upstream's
+        # ``load_data_for_annotation``, where ``pixel_x`` actually stores rows and
+        # ``pixel_y`` stores cols — the two swaps cancel, so the model was trained
+        # on correctly aligned patches. Our adapter assigns ``pixel_x`` from the
+        # column index (x) and ``pixel_y`` from the row index (y), so we keep
+        # intuitive naming and unpack x first to match what the model saw at
+        # training time.
         xcenter, ycenter = coord.loc[spot_idx, ["pixel_x", "pixel_y"]]
 
         x1 = round(xcenter - width / 2)

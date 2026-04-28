@@ -124,7 +124,7 @@ The saved per-spot patches are 3-channel RGB **uint8** PNGs because OmiCLIP's im
 
 Where our vendored copies diverge from the upstream references:
 
-- **Loki — `src/models/loki/preprocess.py::segment_patches`**: fixed an x/y swap when unpacking per-spot pixel coordinates (`ycenter, xcenter = coord[..., ["pixel_x", "pixel_y"]]` &rarr; `xcenter, ycenter = ...`). Without this fix, image patches are cropped at transposed pixel locations whenever a spot is not on the image diagonal, so all `X_loki_image` embeddings would reflect the wrong tissue region.
+- **Loki — `src/models/loki/preprocess.py::segment_patches`**: changed the per-spot coordinate unpacking from `ycenter, xcenter = coord[..., ["pixel_x", "pixel_y"]]` to `xcenter, ycenter = ...`. The OmiCLIP weights themselves are fine — upstream's image pipeline is internally self-consistent: its `load_data_for_annotation` stores rows in `pixel_x` and cols in `pixel_y` (swap #1), and `segment_patches` reads them with a matching swap (swap #2), so the two cancel and the model was trained on correctly aligned patches. Our adapter [src/adapters/loki.py](src/adapters/loki.py) does not use upstream's `load_data_for_annotation`; it builds the coord DataFrame with intuitive naming (`pixel_x` = x-axis = col, `pixel_y` = y-axis = row), which removes swap #1. This patch removes swap #2 to match, so inference patches land on the same pixels the model saw at training time.
 
 ## Testing
 

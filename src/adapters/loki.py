@@ -101,6 +101,12 @@ def _resolve_spatial(
         img = img[:, :, :3]
     scalef = entry["scalefactors"]["tissue_hires_scalef"]
 
+    # Intuitive naming: ``pixel_x`` = x-axis = col, ``pixel_y`` = y-axis = row.
+    # This differs from upstream Loki's ``load_data_for_annotation``, which
+    # stores rows in ``pixel_x`` and cols in ``pixel_y``. Upstream's
+    # ``segment_patches`` is paired with that swapped naming, so the two
+    # cancel; our vendored copy at src/models/loki/preprocess.py is patched to
+    # match the intuitive naming used here. See that file's module docstring.
     coords = adata.obsm["spatial"]  # columns: (col, row) in full-res pixels
     coord_df = pd.DataFrame(
         {
