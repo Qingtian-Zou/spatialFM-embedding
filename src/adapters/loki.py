@@ -4,10 +4,14 @@ Produces L2-normalized 768-dim embeddings via two paths sharing one model load:
 - text:  top-50 expressed gene names per spot, encoded by OmiCLIP text tower
 - image: H&E patches around each spot, encoded by OmiCLIP image tower
 
-The image path is auto-enabled when spatial info is available, either embedded
-in the AnnData (`obsm['spatial']` + `uns['spatial'][lib]['images']['hires']` +
-`tissue_hires_scalef`) or supplied via ``spatial_dir`` pointing at a standard
-Visium ``spatial/`` folder.
+Spatial-data resolution:
+- By default (``spatial_dir=None``), the image path is enabled iff the input
+  AnnData already carries spatial info (``obsm['spatial']`` +
+  ``uns['spatial'][lib]['images']['hires']`` + ``tissue_hires_scalef``).
+- When ``spatial_dir`` is supplied, the adapter force-loads that Visium
+  ``spatial/`` folder and *overrides* whatever spatial metadata was inside the
+  h5ad. If the folder cannot be read, a warning is printed and the adapter
+  falls back to whatever spatial data is in the h5ad (or text-only if none).
 """
 
 import json
@@ -83,10 +87,22 @@ def _resolve_spatial(
     - Any other dtype is clipped to ``[0, 255]`` and cast to uint8.
     - ``(H, W, 4)`` RGBA arrays drop the alpha channel.
     """
-    if "spatial" not in adata.obsm or "spatial" not in adata.uns:
-        if spatial_dir is None:
-            return None
-        _attach_visium_spatial(adata, spatial_dir, library_id=library_id or "loki")
+    if spatial_dir is not None:
+        # Force-load from the folder, overriding any in-h5ad spatial metadata.
+        # _attach_visium_spatial does all I/O before mutating the adata, so a
+        # mid-load failure can't leave the adata in a half-modified state.
+        try:
+            _attach_visium_spatial(adata, spatial_dir, library_id=library_id or "loki")
+        except (FileNotFoundError, OSError, ValueError, KeyError) as e:
+            print(
+                f"[loki] Failed to read --spatial-dir '{spatial_dir}': {e}. "
+                f"Falling back to h5ad spatial data."
+            )
+            if "spatial" not in adata.obsm or "spatial" not in adata.uns:
+                print("[loki] No spatial metadata in h5ad either; running text-only.")
+                return None
+    elif "spatial" not in adata.obsm or "spatial" not in adata.uns:
+        return None
 
     lib = library_id or next(iter(adata.uns["spatial"]))
     entry = adata.uns["spatial"][lib]
@@ -134,8 +150,10 @@ def run(
         input_path: Path to input .h5ad.
         output_dir: Directory for output files.
         model_dir: Directory containing ``checkpoint.pt`` (OmiCLIP weights).
-        spatial_dir: Optional Visium ``spatial/`` folder; used when the h5ad
-            does not already carry spatial metadata.
+        spatial_dir: Optional Visium ``spatial/`` folder. When supplied,
+            overrides any spatial metadata inside the h5ad; if the folder
+            cannot be read, a warning is printed and the adapter falls back
+            to the h5ad's spatial data (or text-only if none).
         housekeeping_genes_path: Optional CSV with a ``genesymbol`` column;
             those genes are excluded from the top-50 selection.
         library_id: Library key under ``adata.uns['spatial']`` (default: first).

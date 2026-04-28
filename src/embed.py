@@ -61,7 +61,7 @@ def main():
     parser.add_argument(
         "--spatial-dir",
         default=None,
-        help="(loki) Path to a Visium spatial/ folder; enables image embedding.",
+        help="(loki) Path to a Visium spatial/ folder. When set, overrides spatial data in the input .h5ad; falls back to h5ad on read failure.",
     )
     parser.add_argument(
         "--housekeeping-genes",

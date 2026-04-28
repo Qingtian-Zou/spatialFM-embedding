@@ -46,7 +46,9 @@ python src/embed.py \
   --output output/scgpt_spatial/ \
   --model-dir model_weights/scgpt_spatial/
 
-# Loki (text-only; add --spatial-dir for image embeddings)
+# Loki — produces text embeddings always, plus image embeddings when the
+# input .h5ad carries spatial metadata. Use --spatial-dir to override the
+# h5ad with a Visium spatial/ folder.
 python src/embed.py \
   --model loki \
   --input data.h5ad \
@@ -73,7 +75,7 @@ python src/embed.py \
 
 | Flag | Default | Description |
 |---|---|---|
-| `--spatial-dir` | *(none)* | Path to Visium `spatial/` folder (see below); enables image embedding |
+| `--spatial-dir` | *(none)* | Path to Visium `spatial/` folder (see below). When set, overrides spatial data in the input `.h5ad`; falls back to h5ad on read failure |
 | `--housekeeping-genes` | *(none)* | CSV with a `genesymbol` column; genes to exclude from text encoding |
 | `--library-id` | *(auto)* | Key under `adata.uns['spatial']` (default: first found) |
 | `--patch-size` | `16` | H&E patch side length in pixels |
@@ -91,7 +93,7 @@ spatial/
 
 Each run produces four output files: `.h5ad`, `.npy`, `.csv`, and `.tsv`.
 
-Loki processes expression data and spatial context separately, and it will only produce embeddings for the expression data by default. When `--spatial-dir` is specified, additional embeddings for the spatial context will be produced as well, so there can be 2 sets of output files except for `.h5ad`. For `.h5ad`, expression embeddings are saved as `adata.obsm["X_loki_text"]` and spatial embeddings are saved as `adata.obsm["X_loki_image"]`, so there is only one `.h5ad` file.
+Loki processes expression data and spatial context separately. The text (expression) embedding is always produced; the image (spatial) embedding is produced whenever spatial data is available — either embedded in the input `.h5ad` (`obsm['spatial']` + `uns['spatial']`) or supplied via `--spatial-dir`. When `--spatial-dir` is set, it *overrides* the in-h5ad spatial data; if the folder cannot be read, the adapter prints a warning and falls back to whatever spatial data the h5ad carries (or text-only if none). When both modalities are produced, there are 2 sets of output files except for `.h5ad`. For `.h5ad`, expression embeddings are saved as `adata.obsm["X_loki_text"]` and spatial embeddings as `adata.obsm["X_loki_image"]`, so there is only one `.h5ad` file.
 
 ## Architecture
 
@@ -116,7 +118,7 @@ Input `.h5ad` &rarr; slide-level mean normalization &rarr; per-gene population z
 
 **Text path:** Input `.h5ad` &rarr; top-50 genes per cell ranked by expression &rarr; gene-name sentence &rarr; COCA text encoder &rarr; 768-dim embeddings stored in `adata.obsm["X_loki_text"]`.
 
-**Image path** (enabled via `--spatial-dir`): H&E image &rarr; per-cell patch extraction using spatial coordinates &rarr; COCA image encoder &rarr; 768-dim embeddings stored in `adata.obsm["X_loki_image"]`.
+**Image path** (produced when spatial data is available — either inside the input `.h5ad` or supplied via `--spatial-dir`): H&E image &rarr; per-cell patch extraction using spatial coordinates &rarr; COCA image encoder &rarr; 768-dim embeddings stored in `adata.obsm["X_loki_image"]`.
 
 The saved per-spot patches are 3-channel RGB **uint8** PNGs because OmiCLIP's image transform (`Resize → CenterCrop → ToTensor → OpenAI-CLIP Normalize`) is calibrated for that format — `ToTensor` divides uint8 PIL pixels by 255 internally. The adapter's `_resolve_spatial` normalizes the hires image to uint8 RGB at load time, so both input routes (Visium PNG via `PIL.Image.open` and the in-memory cache from `adata.uns['spatial']`) produce equivalent patches regardless of the source dtype (uint8, float `[0, 1]`, uint16) or channel count (RGB or RGBA).
 

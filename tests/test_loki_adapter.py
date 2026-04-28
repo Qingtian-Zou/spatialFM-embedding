@@ -33,6 +33,33 @@ def _make_adata(n_cells=4, n_genes=80):
     return anndata.AnnData(X=X, var=pd.DataFrame(index=gene_names))
 
 
+def _make_visium_dir(parent, hires_value=42):
+    """Build a synthetic Visium spatial/ folder with two barcodes (AAA-1, BBB-1).
+
+    The hires PNG is a constant ``hires_value`` so callers can distinguish it
+    from in-h5ad imagery (which is typically zeros) when checking override.
+    """
+    spatial = parent / "spatial"
+    spatial.mkdir()
+    Image.fromarray(
+        np.full((50, 50, 3), hires_value, dtype=np.uint8)
+    ).save(spatial / "tissue_hires_image.png")
+    (spatial / "scalefactors_json.json").write_text(
+        json.dumps({"tissue_hires_scalef": 1.0, "spot_diameter_fullres": 10})
+    )
+    pd.DataFrame(
+        {
+            "barcode": ["AAA-1", "BBB-1"],
+            "in_tissue": [1, 1],
+            "array_row": [0, 1],
+            "array_col": [0, 1],
+            "pxl_row_in_fullres": [10, 20],
+            "pxl_col_in_fullres": [15, 25],
+        }
+    ).to_csv(spatial / "tissue_positions.csv", index=False)
+    return spatial
+
+
 class TestGenerateGeneDF:
     def test_label_has_at_most_50_tokens(self):
         from src.models.loki.preprocess import generate_gene_df
@@ -96,25 +123,7 @@ class TestAttachVisium:
     def test_attach_from_synthetic_visium_dir(self, tmp_path):
         from src.adapters.loki import _attach_visium_spatial
 
-        # Synthetic Visium folder
-        spatial = tmp_path / "spatial"
-        spatial.mkdir()
-        Image.fromarray(np.zeros((50, 50, 3), dtype=np.uint8)).save(
-            spatial / "tissue_hires_image.png"
-        )
-        (spatial / "scalefactors_json.json").write_text(
-            json.dumps({"tissue_hires_scalef": 1.0, "spot_diameter_fullres": 10})
-        )
-        pd.DataFrame(
-            {
-                "barcode": ["AAA-1", "BBB-1"],
-                "in_tissue": [1, 1],
-                "array_row": [0, 1],
-                "array_col": [0, 1],
-                "pxl_row_in_fullres": [10, 20],
-                "pxl_col_in_fullres": [15, 25],
-            }
-        ).to_csv(spatial / "tissue_positions.csv", index=False)
+        spatial = _make_visium_dir(tmp_path, hires_value=0)
 
         ad = anndata.AnnData(
             X=sp.csr_matrix(np.ones((2, 3), dtype=np.float32)),
@@ -221,6 +230,86 @@ class TestResolveSpatial:
         assert (img[0, 0] == 0).all()
         assert (img[0, 1] == 255).all()
         assert img[1:, :].min() == 127 and img[1:, :].max() == 127
+
+
+# ---------------------------------------------------------------------------
+# Resolve spatial — priority + force-with-fallback contract
+# ---------------------------------------------------------------------------
+
+def _adata_no_spatial():
+    return anndata.AnnData(
+        X=sp.csr_matrix(np.ones((2, 3), dtype=np.float32)),
+        obs=pd.DataFrame(index=["AAA-1", "BBB-1"]),
+        var=pd.DataFrame(index=["G0", "G1", "G2"]),
+    )
+
+
+class TestResolveSpatialPriority:
+    def test_default_uses_h5ad_when_present(self):
+        from src.adapters.loki import _resolve_spatial
+
+        hires = np.full((40, 50, 3), 7, dtype=np.uint8)
+        ad = _adata_with_hires(hires)
+
+        result = _resolve_spatial(ad, spatial_dir=None, library_id="loki")
+
+        assert result is not None
+        img, coord_df, lib = result
+        assert lib == "loki"
+        np.testing.assert_array_equal(img, hires)
+        assert list(coord_df.columns) == ["pixel_x", "pixel_y"]
+
+    def test_default_returns_none_when_h5ad_lacks_spatial(self):
+        from src.adapters.loki import _resolve_spatial
+
+        ad = _adata_no_spatial()
+        assert _resolve_spatial(ad, spatial_dir=None, library_id=None) is None
+
+    def test_spatial_dir_overrides_h5ad(self, tmp_path):
+        from src.adapters.loki import _resolve_spatial
+
+        # h5ad carries an all-zero hires; the synthetic folder carries all-99s.
+        # If the folder wins, the returned image must match the folder.
+        ad = _adata_with_hires(np.zeros((40, 50, 3), dtype=np.uint8))
+        spatial = _make_visium_dir(tmp_path, hires_value=99)
+
+        img, _, _ = _resolve_spatial(ad, spatial_dir=str(spatial), library_id="loki")
+
+        assert img.shape == (50, 50, 3)
+        assert int(img.min()) == 99 and int(img.max()) == 99
+
+    def test_spatial_dir_failure_falls_back_to_h5ad(self, tmp_path, capsys):
+        from src.adapters.loki import _resolve_spatial
+
+        hires = np.full((40, 50, 3), 5, dtype=np.uint8)
+        ad = _adata_with_hires(hires)
+
+        # Folder exists but is missing scalefactors_json.json → FileNotFoundError.
+        broken = tmp_path / "spatial"
+        broken.mkdir()
+
+        result = _resolve_spatial(ad, spatial_dir=str(broken), library_id="loki")
+        out = capsys.readouterr().out
+
+        assert "Falling back to h5ad spatial data" in out
+        assert result is not None
+        img, _, _ = result
+        # h5ad's image survives the fallback
+        np.testing.assert_array_equal(img, hires)
+
+    def test_spatial_dir_failure_with_no_h5ad_returns_none(self, tmp_path, capsys):
+        from src.adapters.loki import _resolve_spatial
+
+        ad = _adata_no_spatial()
+        broken = tmp_path / "spatial"
+        broken.mkdir()
+
+        result = _resolve_spatial(ad, spatial_dir=str(broken), library_id="loki")
+        out = capsys.readouterr().out
+
+        assert result is None
+        assert "Falling back to h5ad spatial data" in out
+        assert "running text-only" in out
 
 
 # ---------------------------------------------------------------------------
