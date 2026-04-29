@@ -3,6 +3,7 @@ model_weights/
 output/
 plans/
 references/
+.history/
 
 __pycache__
 .python-version

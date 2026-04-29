@@ -1,0 +1,30 @@
+# Core deep learning
+torch>=2.5.1
+
+# Numerical / scientific
+numpy>=1.26.4
+scipy>=1.11
+pandas>=2.0
+scikit-learn>=1.3
+numba>=0.59.0
+
+# Single-cell / spatial omics I/O
+anndata>=0.10
+scanpy>=1.10
+
+# Model-specific
+einops>=0.7            # scGPT-spatial transformer blocks
+open_clip_torch>=2.24  # Loki OmiCLIP coca_ViT-L-14
+Pillow>=10.0           # Loki H&E patch I/O
+
+# Utilities
+tqdm>=4.65
+
+# Notebooks / benchmarking (scripts/*.ipynb)
+matplotlib>=3.7
+
+# Tests
+pytest>=7.4
+
+# Optional: GPU-accelerated attention for scGPT-spatial.
+# flash-attn>=2.5

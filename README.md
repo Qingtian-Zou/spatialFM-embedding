@@ -14,7 +14,7 @@ A unified framework for extracting cell embeddings from spatial omics foundation
 
 ```bash
 # Install dependencies
-pip install torch>=2.5.1 numpy anndata>=0.10 scanpy scipy scikit-learn einops
+pip install -r requirements.txt
 ```
 
 ### Model Weights
