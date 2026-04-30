@@ -85,6 +85,18 @@ def main():
         choices=["cosmx", "dissociated", "iss", "merfish", "xenium"],
         help="(nicheformer) Platform/technology for normalization (default: dissociated).",
     )
+    parser.add_argument(
+        "--no-symbol-conversion",
+        dest="convert_symbols",
+        action="store_false",
+        default=True,
+        help="(nicheformer) Disable automatic HGNC symbol -> Ensembl ID conversion.",
+    )
+    parser.add_argument(
+        "--hgnc-mapping",
+        default=None,
+        help="(nicheformer) Path to a custom HGNC TSV. Defaults to the bundled file.",
+    )
 
     args = parser.parse_args()
 
@@ -123,6 +135,8 @@ def main():
             technology=args.technology,
             batch_size=args.batch_size,
             device=args.device,
+            convert_symbols=args.convert_symbols,
+            hgnc_mapping_path=args.hgnc_mapping,
         )
 
 

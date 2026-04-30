@@ -76,13 +76,15 @@ python src/embed.py \
   --output output/loki/ \
   --model-dir model_weights/loki/
 
-# Nicheformer (input must use Ensembl gene IDs)
+# Nicheformer (HGNC symbols are auto-detected and converted to Ensembl IDs;
+# pass Ensembl IDs directly to skip conversion)
 python src/embed.py \
   --model nicheformer \
   --input data.h5ad \
   --output output/ \
   --model-dir model_weights/nicheformer/ \
   --technology merfish
+  --batch-size 16 # Nicheformer can consume more VRAM than the other two models
 ```
 
 ### CLI Options
@@ -123,6 +125,8 @@ spatial/
 | Flag | Default | Description |
 |---|---|---|
 | `--technology` | `dissociated` | Platform for normalization: `cosmx`, `dissociated`, `iss`, `merfish`, or `xenium` |
+| `--no-symbol-conversion` | *(off — conversion enabled)* | Disable automatic HGNC symbol &rarr; Ensembl ID conversion. Use when input already has Ensembl IDs and you want the run to fail loudly on any non-Ensembl entries. |
+| `--hgnc-mapping` | *(bundled file)* | Path to a custom HGNC TSV (must include `Approved symbol`, `Status`, `Previous symbols`, `Alias symbols`, `Ensembl gene ID` columns). Defaults to the bundled reference at `src/models/nicheformer/HGNC_symbol_all_genes.tsv`. |
 
 ### Output Formats
 
@@ -161,7 +165,7 @@ The saved per-spot patches are 3-channel RGB **uint8** PNGs because OmiCLIP's im
 
 ### Nicheformer Pipeline
 
-Input `.h5ad` (Ensembl gene IDs) &rarr; gene alignment to 20,310-gene vocabulary &rarr; library-size normalization (10k) &rarr; platform-specific median normalization &rarr; rank tokenization (top genes by expression) &rarr; 12-layer transformer inference &rarr; mean-pooled 512-dim cell embeddings stored in `adata.obsm["X_nicheformer"]`.
+Input `.h5ad` (Ensembl gene IDs **or** HGNC symbols — symbols are auto-detected and converted to Ensembl IDs via the bundled HGNC reference (from [scFoundation](https://github.com/biomap-research/scFoundation/blob/main/SCAD/data/processing/HGNC_symbol_all_genes.tsv)); human-only — mouse data needs orthology mapping upstream) &rarr; gene alignment to 20,310-gene vocabulary &rarr; library-size normalization (10k) &rarr; platform-specific median normalization &rarr; rank tokenization (top genes by expression) &rarr; 12-layer transformer inference &rarr; mean-pooled 512-dim cell embeddings stored in `adata.obsm["X_nicheformer"]`.
 
 ### Patches Applied to Upstream Code
 

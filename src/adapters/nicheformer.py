@@ -12,7 +12,19 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.models.nicheformer.model import NicheformerInference
-from src.models.nicheformer.preprocess import NicheformerDataset, align_genes
+from src.models.nicheformer.preprocess import (
+    NicheformerDataset,
+    _load_hgnc_mapping,
+    _looks_like_ensembl,
+    _strip_ensembl_version,
+    align_genes,
+    to_ensembl_ids,
+)
+
+DEFAULT_HGNC_TSV = (
+    Path(__file__).resolve().parent.parent
+    / "models" / "nicheformer" / "HGNC_symbol_all_genes.tsv"
+)
 
 
 def run(
@@ -22,6 +34,8 @@ def run(
     technology: str = "dissociated",
     batch_size: int = 64,
     device: str = "cuda",
+    convert_symbols: bool = True,
+    hgnc_mapping_path: str | None = None,
 ) -> AnnData:
     """Run Nicheformer embedding extraction and export results.
 
@@ -34,6 +48,12 @@ def run(
             "cosmx", "dissociated", "iss", "merfish", "xenium".
         batch_size: Batch size for inference.
         device: "cuda" or "cpu".
+        convert_symbols: If True (default), auto-detect HGNC gene symbols in
+            the input and convert them to Ensembl IDs before alignment.
+            Set False to require Ensembl IDs explicitly.
+        hgnc_mapping_path: Optional override for the HGNC reference TSV. When
+            None, uses the bundled file at
+            ``src/models/nicheformer/HGNC_symbol_all_genes.tsv``.
 
     Returns:
         AnnData with embeddings in adata.obsm["X_nicheformer"].
@@ -45,6 +65,17 @@ def run(
     # --- Load input ---
     adata = sc.read_h5ad(input_path)
     adata.var_names_make_unique()
+
+    # --- Normalize gene IDs ---
+    # Strip Ensembl version suffixes unconditionally (no-op for non-Ensembl).
+    adata.var_names = [_strip_ensembl_version(g) for g in adata.var_names]
+
+    # Auto-detect HGNC symbols and convert to Ensembl IDs.
+    if convert_symbols and not _looks_like_ensembl(adata.var_names):
+        tsv_path = Path(hgnc_mapping_path) if hgnc_mapping_path else DEFAULT_HGNC_TSV
+        mapping = _load_hgnc_mapping(str(tsv_path))
+        adata = to_ensembl_ids(adata, mapping)
+        adata.var_names_make_unique()
 
     # --- Load gene vocabulary and technology mean ---
     vocab_adata = anndata.read_h5ad(model_dir / "model.h5ad")

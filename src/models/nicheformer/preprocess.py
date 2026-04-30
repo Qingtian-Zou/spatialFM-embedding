@@ -5,16 +5,195 @@ Ported from the reference implementation at:
   references/nicheformer/src/nicheformer/models/_utils.py
 """
 
+import functools
 import gc
+import re
+from pathlib import Path
+from typing import Sequence
 
+import anndata
 import numba
 import numpy as np
+import pandas as pd
 import torch
 from anndata import AnnData
-from scipy.sparse import issparse
+from scipy.sparse import csr_matrix, issparse
 from sklearn.utils import sparsefuncs
 from torch.utils.data import Dataset
 from tqdm import tqdm
+
+
+# ---------------------------------------------------------------------------
+# Gene ID detection and HGNC symbol -> Ensembl conversion
+# ---------------------------------------------------------------------------
+
+_ENSEMBL_VERSION_RE = re.compile(r"\.\d+$")
+
+
+def _strip_ensembl_version(name: str) -> str:
+    """Strip a trailing ``.<digits>`` version suffix from an Ensembl ID.
+
+    No-op for non-Ensembl strings (regex matches only ``.\\d+$``).
+    """
+    if isinstance(name, str) and name.startswith("ENS"):
+        return _ENSEMBL_VERSION_RE.sub("", name)
+    return name
+
+
+def _looks_like_ensembl(var_names: Sequence[str], threshold: float = 0.5) -> bool:
+    """Heuristically detect whether ``var_names`` are Ensembl IDs.
+
+    Returns True if at least *threshold* fraction of names start with ``ENS``
+    (case-sensitive — Ensembl IDs are uppercase). Returns False on empty input.
+    """
+    n = len(var_names)
+    if n == 0:
+        return False
+    hits = sum(1 for g in var_names if isinstance(g, str) and g.startswith("ENS"))
+    return (hits / n) >= threshold
+
+
+@functools.lru_cache(maxsize=4)
+def _load_hgnc_mapping(path: str) -> dict:
+    """Parse an HGNC TSV into a ``{symbol_upper -> ensembl_id}`` dict.
+
+    Skips rows where ``Status == "Symbol Withdrawn"`` or ``Ensembl gene ID``
+    is empty. First registers ``Previous symbols`` and ``Alias symbols``
+    (comma-separated), then ``Approved symbol`` so approved entries win on
+    collision. All keys are uppercased for case-insensitive lookup.
+
+    Cached by path so repeated calls within a process are free.
+    """
+    df = pd.read_csv(path, sep="\t", dtype=str, na_filter=False)
+
+    required = {"Approved symbol", "Status", "Ensembl gene ID",
+                "Previous symbols", "Alias symbols"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(
+            f"HGNC TSV at {path} is missing columns: {sorted(missing)}"
+        )
+
+    df = df[(df["Status"] != "Symbol Withdrawn") & (df["Ensembl gene ID"] != "")]
+
+    mapping: dict[str, str] = {}
+
+    def _add_csv_field(field: str, ensembl: str) -> None:
+        for sym in field.split(","):
+            sym = sym.strip().upper()
+            if sym:
+                mapping.setdefault(sym, ensembl)
+
+    # Pass 1: aliases and previous symbols (lower priority).
+    for _, row in df.iterrows():
+        ensembl = row["Ensembl gene ID"]
+        _add_csv_field(row["Previous symbols"], ensembl)
+        _add_csv_field(row["Alias symbols"], ensembl)
+
+    # Pass 2: approved symbols overwrite, so they take precedence.
+    for _, row in df.iterrows():
+        sym = row["Approved symbol"].strip().upper()
+        if sym:
+            mapping[sym] = row["Ensembl gene ID"]
+
+    return mapping
+
+
+def to_ensembl_ids(adata: AnnData, mapping: dict) -> AnnData:
+    """Rename ``adata.var_names`` from HGNC symbols to Ensembl IDs.
+
+    Genes already starting with ``ENS`` pass through unchanged. Other genes
+    are looked up case-insensitively in *mapping*; unmapped genes are
+    dropped. When multiple input columns collapse to the same Ensembl ID
+    (e.g. an approved symbol and one of its aliases both present), their
+    expression columns are summed.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Input data; not mutated.
+    mapping : dict
+        ``{symbol_upper -> ensembl_id}`` lookup, e.g. from
+        :func:`_load_hgnc_mapping`.
+
+    Returns
+    -------
+    AnnData
+        New AnnData with Ensembl IDs in ``var_names`` and (if needed) the
+        expression matrix collapsed across duplicates.
+
+    Raises
+    ------
+    ValueError
+        If zero genes map — message points to the most likely cause
+        (mouse data needing orthology conversion).
+    """
+    n_input = adata.n_vars
+    input_names = list(adata.var_names)
+
+    new_names: list[str | None] = []
+    for raw in input_names:
+        if not isinstance(raw, str):
+            new_names.append(None)
+            continue
+        g = raw.strip()
+        if g.startswith("ENS"):
+            new_names.append(g)
+        else:
+            new_names.append(mapping.get(g.upper()))
+
+    keep_idx = [i for i, n in enumerate(new_names) if n]
+    n_mapped = len(keep_idx)
+    n_dropped = n_input - n_mapped
+    print(
+        f"[nicheformer] HGNC -> Ensembl: mapped {n_mapped}/{n_input} genes "
+        f"({n_dropped} unmapped, dropped)"
+    )
+
+    if n_mapped == 0:
+        raise ValueError(
+            f"None of {n_input} input gene symbols matched the HGNC mapping. "
+            "If this is mouse data, convert to human orthologs upstream — "
+            "Nicheformer's vocabulary is human Ensembl IDs only. "
+            f"Got: {input_names[:5]}"
+        )
+
+    kept_names = [new_names[i] for i in keep_idx]
+
+    # Aggregate columns that collide on the same Ensembl ID (sum).
+    unique_names = list(dict.fromkeys(kept_names))
+    if len(unique_names) == len(kept_names):
+        sub = adata[:, keep_idx].copy()
+        sub.var_names = pd.Index(kept_names)
+        return sub
+
+    name_to_cols: dict[str, list[int]] = {}
+    for col_pos, name in enumerate(kept_names):
+        name_to_cols.setdefault(name, []).append(keep_idx[col_pos])
+
+    X = adata.X
+    n_obs = adata.n_obs
+    if issparse(X):
+        X_csc = X.tocsc()
+        cols = []
+        for name in unique_names:
+            idxs = name_to_cols[name]
+            col_sum = X_csc[:, idxs].sum(axis=1)
+            cols.append(np.asarray(col_sum).reshape(-1, 1))
+        new_X = csr_matrix(np.hstack(cols))
+    else:
+        X_arr = np.asarray(X)
+        cols = [X_arr[:, name_to_cols[name]].sum(axis=1, keepdims=True)
+                for name in unique_names]
+        new_X = np.hstack(cols)
+
+    return anndata.AnnData(
+        X=new_X,
+        obs=adata.obs.copy(),
+        var=pd.DataFrame(index=pd.Index(unique_names)),
+        obsm={k: v.copy() if hasattr(v, "copy") else v for k, v in adata.obsm.items()},
+        uns=dict(adata.uns) if adata.uns else None,
+    )
 
 
 # ---------------------------------------------------------------------------

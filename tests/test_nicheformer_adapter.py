@@ -5,6 +5,8 @@ Unit tests use synthetic data and random weights.  End-to-end tests that
 require the converted checkpoint are gated behind ``requires_nicheformer_weights``.
 """
 
+from pathlib import Path
+
 import anndata
 import numpy as np
 import pandas as pd
@@ -17,6 +19,11 @@ from tests.conftest import (
     SAMPLE_H5AD,
     requires_nicheformer_weights,
     requires_sample_data,
+)
+
+BUNDLED_HGNC_TSV = (
+    Path(__file__).resolve().parent.parent
+    / "src" / "models" / "nicheformer" / "HGNC_symbol_all_genes.tsv"
 )
 
 
@@ -247,6 +254,235 @@ class TestAlignGenes:
         )
         with pytest.raises(ValueError, match="No input genes match"):
             align_genes(ad, ["A", "B"], np.array([1.0, 2.0]))
+
+
+# ---------------------------------------------------------------------------
+# Ensembl version stripping
+# ---------------------------------------------------------------------------
+
+class TestStripEnsemblVersion:
+    def test_strips_version_suffix(self):
+        from src.models.nicheformer.preprocess import _strip_ensembl_version
+        assert _strip_ensembl_version("ENSG00000141510.18") == "ENSG00000141510"
+
+    def test_no_version_unchanged(self):
+        from src.models.nicheformer.preprocess import _strip_ensembl_version
+        assert _strip_ensembl_version("ENSG00000141510") == "ENSG00000141510"
+
+    def test_non_ensembl_unchanged(self):
+        from src.models.nicheformer.preprocess import _strip_ensembl_version
+        assert _strip_ensembl_version("TP53") == "TP53"
+        assert _strip_ensembl_version("TP53.5") == "TP53.5"
+
+
+# ---------------------------------------------------------------------------
+# Ensembl detection heuristic
+# ---------------------------------------------------------------------------
+
+class TestLooksLikeEnsembl:
+    def test_all_ensembl_returns_true(self):
+        from src.models.nicheformer.preprocess import _looks_like_ensembl
+        assert _looks_like_ensembl(["ENSG00000141510", "ENSG00000012048"])
+
+    def test_all_symbols_returns_false(self):
+        from src.models.nicheformer.preprocess import _looks_like_ensembl
+        assert not _looks_like_ensembl(["TP53", "BRCA1", "EGFR"])
+
+    def test_50_50_at_default_threshold(self):
+        from src.models.nicheformer.preprocess import _looks_like_ensembl
+        assert _looks_like_ensembl(["ENSG00000141510", "TP53"])
+
+    def test_below_threshold_returns_false(self):
+        from src.models.nicheformer.preprocess import _looks_like_ensembl
+        assert not _looks_like_ensembl(
+            ["ENSG00000141510", "TP53", "BRCA1", "EGFR"]
+        )
+
+    def test_empty_returns_false(self):
+        from src.models.nicheformer.preprocess import _looks_like_ensembl
+        assert not _looks_like_ensembl([])
+
+
+# ---------------------------------------------------------------------------
+# HGNC TSV parsing
+# ---------------------------------------------------------------------------
+
+def _write_mini_hgnc_tsv(path: Path) -> None:
+    """Write a tiny HGNC TSV with the columns the loader needs."""
+    rows = [
+        # Approved row
+        ["HGNC:1", "GENEA", "Gene A", "Approved", "OLDA1, OLDA2", "ALA1",
+         "1", "", "", "", "1", "ENSG00000000001"],
+        # Approved row whose Approved symbol collides with another row's alias
+        ["HGNC:2", "GENEB", "Gene B", "Approved", "", "GENEA",
+         "2", "", "", "", "2", "ENSG00000000002"],
+        # Withdrawn — must be skipped
+        ["HGNC:3", "GENEW", "withdrawn", "Symbol Withdrawn", "", "",
+         "3", "", "", "", "3", "ENSG00000000003"],
+        # Approved but missing Ensembl — must be skipped
+        ["HGNC:4", "GENEN", "Gene N", "Approved", "", "",
+         "4", "", "", "", "4", ""],
+    ]
+    cols = ["HGNC ID", "Approved symbol", "Approved name", "Status",
+            "Previous symbols", "Alias symbols", "Chromosome",
+            "Accession numbers", "RefSeq IDs", "Enzyme IDs",
+            "NCBI Gene ID", "Ensembl gene ID"]
+    df = pd.DataFrame(rows, columns=cols)
+    df.to_csv(path, sep="\t", index=False)
+
+
+class TestLoadHgncMapping:
+    def test_parses_approved_symbols(self, tmp_path):
+        from src.models.nicheformer.preprocess import _load_hgnc_mapping
+        tsv = tmp_path / "mini_hgnc.tsv"
+        _write_mini_hgnc_tsv(tsv)
+        mapping = _load_hgnc_mapping(str(tsv))
+        assert mapping["GENEA"] == "ENSG00000000001"
+        assert mapping["GENEB"] == "ENSG00000000002"
+
+    def test_aliases_and_previous_resolve(self, tmp_path):
+        from src.models.nicheformer.preprocess import _load_hgnc_mapping
+        tsv = tmp_path / "mini_hgnc.tsv"
+        _write_mini_hgnc_tsv(tsv)
+        mapping = _load_hgnc_mapping(str(tsv))
+        assert mapping["OLDA1"] == "ENSG00000000001"
+        assert mapping["OLDA2"] == "ENSG00000000001"
+        assert mapping["ALA1"] == "ENSG00000000001"
+
+    def test_approved_beats_alias_on_collision(self, tmp_path):
+        from src.models.nicheformer.preprocess import _load_hgnc_mapping
+        tsv = tmp_path / "mini_hgnc.tsv"
+        _write_mini_hgnc_tsv(tsv)
+        mapping = _load_hgnc_mapping(str(tsv))
+        # GENEA is GENEB's alias, but also an approved symbol — approved wins.
+        assert mapping["GENEA"] == "ENSG00000000001"
+
+    def test_withdrawn_row_skipped(self, tmp_path):
+        from src.models.nicheformer.preprocess import _load_hgnc_mapping
+        tsv = tmp_path / "mini_hgnc.tsv"
+        _write_mini_hgnc_tsv(tsv)
+        mapping = _load_hgnc_mapping(str(tsv))
+        assert "GENEW" not in mapping
+
+    def test_empty_ensembl_skipped(self, tmp_path):
+        from src.models.nicheformer.preprocess import _load_hgnc_mapping
+        tsv = tmp_path / "mini_hgnc.tsv"
+        _write_mini_hgnc_tsv(tsv)
+        mapping = _load_hgnc_mapping(str(tsv))
+        assert "GENEN" not in mapping
+
+    def test_missing_columns_raises(self, tmp_path):
+        from src.models.nicheformer.preprocess import _load_hgnc_mapping
+        bad = tmp_path / "bad.tsv"
+        pd.DataFrame({"foo": ["bar"]}).to_csv(bad, sep="\t", index=False)
+        with pytest.raises(ValueError, match="missing columns"):
+            _load_hgnc_mapping(str(bad))
+
+    @pytest.mark.skipif(
+        not BUNDLED_HGNC_TSV.exists(),
+        reason="bundled HGNC TSV not present",
+    )
+    def test_real_tsv_known_mappings(self):
+        from src.models.nicheformer.preprocess import _load_hgnc_mapping
+        mapping = _load_hgnc_mapping(str(BUNDLED_HGNC_TSV))
+        assert mapping["TP53"] == "ENSG00000141510"
+        assert mapping["BRCA1"] == "ENSG00000012048"
+        assert mapping["A1BG"] == "ENSG00000121410"
+
+
+# ---------------------------------------------------------------------------
+# HGNC symbol -> Ensembl conversion
+# ---------------------------------------------------------------------------
+
+def _toy_mapping() -> dict:
+    return {
+        "TP53": "ENSG00000141510",
+        "BRCA1": "ENSG00000012048",
+        "EGFR": "ENSG00000146648",
+        # An alias that collapses onto TP53's Ensembl ID.
+        "P53": "ENSG00000141510",
+    }
+
+
+class TestToEnsemblIds:
+    def test_symbols_converted(self):
+        from src.models.nicheformer.preprocess import to_ensembl_ids
+        ad = anndata.AnnData(
+            X=np.ones((2, 3), dtype=np.float32),
+            var=pd.DataFrame(index=["TP53", "BRCA1", "EGFR"]),
+        )
+        out = to_ensembl_ids(ad, _toy_mapping())
+        assert list(out.var_names) == [
+            "ENSG00000141510", "ENSG00000012048", "ENSG00000146648"
+        ]
+        assert out.shape == (2, 3)
+
+    def test_ensembl_passthrough(self):
+        from src.models.nicheformer.preprocess import to_ensembl_ids
+        ad = anndata.AnnData(
+            X=np.ones((2, 2), dtype=np.float32),
+            var=pd.DataFrame(index=["ENSG00000141510", "ENSG00000012048"]),
+        )
+        out = to_ensembl_ids(ad, {})
+        assert list(out.var_names) == ["ENSG00000141510", "ENSG00000012048"]
+
+    def test_unmapped_dropped(self):
+        from src.models.nicheformer.preprocess import to_ensembl_ids
+        ad = anndata.AnnData(
+            X=np.ones((2, 4), dtype=np.float32),
+            var=pd.DataFrame(index=["TP53", "FAKEGENE", "BRCA1", "BOGUS"]),
+        )
+        out = to_ensembl_ids(ad, _toy_mapping())
+        assert list(out.var_names) == ["ENSG00000141510", "ENSG00000012048"]
+        assert out.shape == (2, 2)
+
+    def test_case_insensitive(self):
+        from src.models.nicheformer.preprocess import to_ensembl_ids
+        ad = anndata.AnnData(
+            X=np.ones((1, 2), dtype=np.float32),
+            var=pd.DataFrame(index=["tp53", "Brca1"]),
+        )
+        out = to_ensembl_ids(ad, _toy_mapping())
+        assert list(out.var_names) == ["ENSG00000141510", "ENSG00000012048"]
+
+    def test_duplicates_summed_dense(self):
+        from src.models.nicheformer.preprocess import to_ensembl_ids
+        # TP53 and P53 both map to ENSG00000141510 -> columns should be summed.
+        X = np.array([[1.0, 2.0, 10.0], [3.0, 4.0, 20.0]], dtype=np.float32)
+        ad = anndata.AnnData(
+            X=X.copy(),
+            var=pd.DataFrame(index=["TP53", "P53", "BRCA1"]),
+        )
+        out = to_ensembl_ids(ad, _toy_mapping())
+        assert list(out.var_names) == ["ENSG00000141510", "ENSG00000012048"]
+        assert out.shape == (2, 2)
+        out_X = np.asarray(out.X)
+        np.testing.assert_array_equal(out_X[:, 0], X[:, 0] + X[:, 1])
+        np.testing.assert_array_equal(out_X[:, 1], X[:, 2])
+
+    def test_duplicates_summed_sparse(self):
+        from src.models.nicheformer.preprocess import to_ensembl_ids
+        X = sp.csr_matrix(
+            np.array([[1.0, 2.0, 10.0], [3.0, 4.0, 20.0]], dtype=np.float32)
+        )
+        ad = anndata.AnnData(
+            X=X,
+            var=pd.DataFrame(index=["TP53", "P53", "BRCA1"]),
+        )
+        out = to_ensembl_ids(ad, _toy_mapping())
+        assert list(out.var_names) == ["ENSG00000141510", "ENSG00000012048"]
+        out_dense = out.X.toarray() if sp.issparse(out.X) else np.asarray(out.X)
+        np.testing.assert_array_equal(out_dense[:, 0], [3.0, 7.0])
+        np.testing.assert_array_equal(out_dense[:, 1], [10.0, 20.0])
+
+    def test_zero_mapped_raises_with_mouse_hint(self):
+        from src.models.nicheformer.preprocess import to_ensembl_ids
+        ad = anndata.AnnData(
+            X=np.ones((1, 2), dtype=np.float32),
+            var=pd.DataFrame(index=["Trp53", "Brca1"]),
+        )
+        with pytest.raises(ValueError, match="mouse"):
+            to_ensembl_ids(ad, {})
 
 
 # ---------------------------------------------------------------------------
