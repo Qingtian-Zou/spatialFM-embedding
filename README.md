@@ -31,14 +31,17 @@ model_weights/scgpt_spatial/
   all_dict_mean_std.csv  # normalization statistics
 ```
 
-**Nicheformer** — Download the [Nicheformer checkpoint](https://github.com/theislab/nicheformer) and run the one-time conversion script:
+**Nicheformer** — Download the [Nicheformer checkpoint](https://github.com/theislab/nicheformer#pretraining-weights) and needed artifacts [model_means](https://github.com/theislab/nicheformer/tree/main/data/model_means), and thenrun the one-time conversion script:
 
 ```bash
+# One-time conversion from provided Lightning checkpoint to pure PyTorch
 # Requires pytorch-lightning (temporary install)
-pip install pytorch-lightning
-python scripts/convert_nicheformer_ckpt.py
-pip uninstall pytorch-lightning -y
+python scripts/convert_nicheformer_ckpt.py \
+  --input-dir downloaded_nicheformer \
+  --output-dir model_weights/nicheformer
 ```
+
+The script expects the input directory to contain `nicheformer.ckpt` and `data/model_means/` (the standard layout produced by the upstream download). To override individual paths for non-standard layouts, use `--ckpt <path>` and/or `--means-dir <path>`.
 
 This produces `model_weights/nicheformer/`:
 
