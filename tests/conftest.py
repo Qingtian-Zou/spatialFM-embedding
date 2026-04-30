@@ -16,6 +16,7 @@ import scipy.sparse as sp
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODEL_DIR = PROJECT_ROOT / "models" / "scgpt_spatial"
 LOKI_MODEL_DIR = PROJECT_ROOT / "models" / "loki"
+NICHEFORMER_MODEL_DIR = PROJECT_ROOT / "model_weights" / "nicheformer"
 DATA_DIR = PROJECT_ROOT / "data"
 SAMPLE_H5AD = DATA_DIR / "GSE244084" / "GSM7806336" / "GSM7806336.h5ad"
 SAMPLE_SPATIAL_DIR = DATA_DIR / "GSE244084" / "GSM7806336" / "GSM7806336_spatial"
@@ -29,6 +30,10 @@ def _has_loki_weights() -> bool:
     return (LOKI_MODEL_DIR / "checkpoint.pt").exists()
 
 
+def _has_nicheformer_weights() -> bool:
+    return (NICHEFORMER_MODEL_DIR / "model_state_dict.pt").exists()
+
+
 def _has_sample_data() -> bool:
     return SAMPLE_H5AD.exists()
 
@@ -40,6 +45,10 @@ requires_model_weights = pytest.mark.skipif(
 requires_loki_weights = pytest.mark.skipif(
     not _has_loki_weights(),
     reason="Loki weights not found at models/loki/checkpoint.pt",
+)
+requires_nicheformer_weights = pytest.mark.skipif(
+    not _has_nicheformer_weights(),
+    reason="Nicheformer weights not found at model_weights/nicheformer/",
 )
 requires_sample_data = pytest.mark.skipif(
     not _has_sample_data(),

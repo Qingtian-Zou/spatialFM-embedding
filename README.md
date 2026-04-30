@@ -7,7 +7,7 @@ A unified framework for extracting cell embeddings from spatial omics foundation
 | Model | Type | Embedding Dim | Status |
 |---|---|---|---|
 | [**scGPT-spatial**](https://github.com/bowang-lab/scGPT-spatial) | Transformer + MoE | 512 | Implemented |
-| [**Nicheformer**](https://github.com/theislab/nicheformer) | Transformer MLM | 512 | Planned |
+| [**Nicheformer**](https://github.com/theislab/nicheformer) | Transformer MLM | 512 | Implemented |
 | [**Loki** (text / image)](https://github.com/GuangyuWangLab2021/Loki) | Vision-language COCA ViT-L-14 | 768 | Implemented |
 
 ## Setup
@@ -22,6 +22,9 @@ pip install -r requirements.txt
 Download model weights:
  - `model_weights/scgpt_spatial/`: [scGPT-spatial weights](https://github.com/bowang-lab/scGPT-spatial?tab=readme-ov-file#-model-weights-)
  - `model_weights/loki/`: [Loki weights](https://github.com/GuangyuWangLab2021/Loki?tab=readme-ov-file#pretrained-weights) &rarr; [checkpoint.pt](https://huggingface.co/WangGuangyuLab/Loki/blob/main/checkpoint.pt)
+ - `model_weights/nicheformer/`:
+   - [Nicheformer checkpoint](https://github.com/theislab/nicheformer#pretraining-weights)
+   - [required artifacts](https://github.com/theislab/nicheformer/tree/main/data/model_means)
 
 ```
 model_weights/
@@ -34,7 +37,27 @@ model_weights/
     checkpoint.pt        # 7.2 GB checkpoint
 ```
 
-These files are gitignored and must be obtained separately.
+**Additional requirements for Nicheformer** — Download the [Nicheformer checkpoint](https://github.com/theislab/nicheformer#pretraining-weights) and needed artifacts [model_means](https://github.com/theislab/nicheformer/tree/main/data/model_means), and then run the one-time conversion script:
+
+```bash
+# One-time conversion from provided Lightning checkpoint to pure PyTorch
+# Requires pytorch-lightning (temporary install)
+python scripts/convert_nicheformer_ckpt.py \
+  --input-dir downloaded_nicheformer \
+  --output-dir model_weights/nicheformer
+```
+
+The script expects the input directory to contain `nicheformer.ckpt` and npy files from `model_means` (the standard layout produced by the upstream download). To override individual paths for non-standard layouts, use `--ckpt <path>` and/or `--means-dir <path>`.
+
+This produces `model_weights/nicheformer/`:
+
+```
+model_weights/nicheformer/
+  model_state_dict.pt       # 197 MB pure-PyTorch state dict
+  hparams.json              # model hyperparameters
+  model.h5ad                # gene vocabulary (20,310 Ensembl IDs)
+  {cosmx,dissociated,iss,merfish,xenium}_mean_script.npy  # platform-specific normalization
+```
 
 ## Usage
 
@@ -54,6 +77,14 @@ python src/embed.py \
   --input data.h5ad \
   --output output/loki/ \
   --model-dir model_weights/loki/
+
+# Nicheformer (input must use Ensembl gene IDs)
+python src/embed.py \
+  --model nicheformer \
+  --input data.h5ad \
+  --output output/ \
+  --model-dir model_weights/nicheformer/ \
+  --technology merfish
 ```
 
 ### CLI Options
@@ -70,6 +101,12 @@ python src/embed.py \
 | `--gene-col` | `feature_name` | Column in `adata.var` for gene names, or `index` |
 | `--max-length` | `1200` | Maximum sequence length |
 | `--batch-size` | `64` | Batch size for inference |
+
+#### Nicheformer-specific Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--technology` | `dissociated` | Platform for normalization: `cosmx`, `dissociated`, `iss`, `merfish`, or `xenium` |
 
 #### Loki-specific Options
 
@@ -104,15 +141,21 @@ src/
   embed.py              # CLI entry point
   adapters/
     scgpt_spatial.py    # scGPT-spatial adapter
+    nicheformer.py      # Nicheformer adapter
     loki.py             # Loki adapter (text + image paths)
   models/
     scgpt_spatial/      # model code (with patches for torchtext and flash_attn compatibility)
+    nicheformer/        # Nicheformer model code (pure nn.Module, ported from Lightning)
     loki/               # Loki model code (COCA ViT-L-14)
 ```
 
 ### scGPT-spatial Pipeline
 
 Input `.h5ad` &rarr; slide-level mean normalization &rarr; per-gene population z-score &rarr; 51-bin quantile binning &rarr; tokenization via `GeneVocab` &rarr; transformer inference &rarr; 512-dim cell embeddings stored in `adata.obsm["X_scgpt_spatial"]`.
+
+### Nicheformer Pipeline
+
+Input `.h5ad` (Ensembl gene IDs) &rarr; gene alignment to 20,310-gene vocabulary &rarr; library-size normalization (10k) &rarr; platform-specific median normalization &rarr; rank tokenization (top genes by expression) &rarr; 12-layer transformer inference &rarr; mean-pooled 512-dim cell embeddings stored in `adata.obsm["X_nicheformer"]`.
 
 ### Loki Pipeline
 
@@ -138,4 +181,4 @@ pytest tests/
 pytest tests/test_scgpt_spatial_tokenizer.py -v
 ```
 
-Most tests use lightweight synthetic fixtures and run without model weights or sample data. Tests that require external files are skipped automatically via `requires_model_weights` and `requires_sample_data` markers.
+Most tests use lightweight synthetic fixtures and run without model weights or sample data. Tests that require external files are skipped automatically via `requires_model_weights`, `requires_nicheformer_weights`, `requires_loki_weights`, and `requires_sample_data` markers.

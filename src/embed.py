@@ -79,6 +79,12 @@ def main():
         default=16,
         help="(loki) H&E patch side length in pixels (default: 16).",
     )
+    parser.add_argument(
+        "--technology",
+        default="dissociated",
+        choices=["cosmx", "dissociated", "iss", "merfish", "xenium"],
+        help="(nicheformer) Platform/technology for normalization (default: dissociated).",
+    )
 
     args = parser.parse_args()
 
@@ -108,8 +114,16 @@ def main():
             device=args.device,
         )
     elif args.model == "nicheformer":
-        print(f"Error: Model '{args.model}' is not yet implemented.", file=sys.stderr)
-        sys.exit(1)
+        from src.adapters.nicheformer import run
+
+        run(
+            input_path=args.input,
+            output_dir=args.output,
+            model_dir=args.model_dir,
+            technology=args.technology,
+            batch_size=args.batch_size,
+            device=args.device,
+        )
 
 
 if __name__ == "__main__":
