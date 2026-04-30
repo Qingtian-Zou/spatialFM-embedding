@@ -17,7 +17,7 @@ def main():
     parser.add_argument(
         "--model",
         required=True,
-        choices=["scgpt_spatial", "nicheformer", "loki"],
+        choices=["scgpt_spatial", "nicheformer", "loki", "stpath"],
         help="Model to use for embedding.",
     )
     parser.add_argument(
@@ -61,7 +61,7 @@ def main():
     parser.add_argument(
         "--spatial-dir",
         default=None,
-        help="(loki) Path to a Visium spatial/ folder. When set, overrides spatial data in the input .h5ad; falls back to h5ad on read failure.",
+        help="(loki, stpath) Path to a Visium spatial/ folder. For loki: overrides spatial data in the input .h5ad (falls back to h5ad on read failure). For stpath: source folder for inline Gigapath feature extraction when --gigapath-h5 is not given.",
     )
     parser.add_argument(
         "--housekeeping-genes",
@@ -71,13 +71,72 @@ def main():
     parser.add_argument(
         "--library-id",
         default=None,
-        help="(loki) Key under adata.uns['spatial'] (default: first).",
+        help="(loki, stpath) Key under adata.uns['spatial'] (default: first).",
     )
     parser.add_argument(
         "--patch-size",
         type=int,
         default=16,
         help="(loki) H&E patch side length in pixels (default: 16).",
+    )
+    parser.add_argument(
+        "--gigapath-h5",
+        default=None,
+        help="(stpath) Path to a precomputed Gigapath sidecar .h5 with datasets "
+             "'embeddings' [n, 1536] and 'barcodes' [n]. Optional: when omitted, "
+             "the adapter computes Gigapath features inline and caches them at "
+             "--gigapath-cache (default: <output>/gigapath_features.h5).",
+    )
+    parser.add_argument(
+        "--fullres-image",
+        default=None,
+        help="(stpath) Full-resolution H&E image (TIFF/PNG/SVS) used for inline "
+             "Gigapath feature extraction. Strongly preferred over the Visium "
+             "hires PNG (Gigapath was trained on ~0.5 mpp tiles).",
+    )
+    parser.add_argument(
+        "--patch-px",
+        type=int,
+        default=None,
+        help="(stpath) Per-spot crop side length in image pixels for inline "
+             "Gigapath features. Defaults to spot_diameter_fullres from Visium "
+             "scalefactors (auto-scaled when falling back to the hires image).",
+    )
+    parser.add_argument(
+        "--gigapath-batch-size",
+        type=int,
+        default=32,
+        help="(stpath) Batch size for inline Gigapath inference (default: 32).",
+    )
+    parser.add_argument(
+        "--gigapath-precision",
+        default="fp32",
+        choices=["fp32", "fp16"],
+        help="(stpath) Precision for inline Gigapath inference (default: fp32).",
+    )
+    parser.add_argument(
+        "--gigapath-cache",
+        default=None,
+        help="(stpath) Sidecar cache path written/read when --gigapath-h5 is "
+             "not supplied (default: <output>/gigapath_features.h5).",
+    )
+    parser.add_argument(
+        "--organ-type",
+        default="Others",
+        help="(stpath) Organ token (default: Others). One of 25 values from "
+             "src/models/stpath/utils/constants.py:organ_voc.",
+    )
+    parser.add_argument(
+        "--tech-type",
+        default=None,
+        help="(stpath) Technology token. One of 'Spatial Transcriptomics', "
+             "'Visium', 'Xenium', 'Visium HD'. Defaults to pad token.",
+    )
+    parser.add_argument(
+        "--save-imputed-expression",
+        action="store_true",
+        help="(stpath) Also write imputed_expression.h5ad with the model's "
+             "refined log1p expression on STPath's 38,984-gene vocabulary.",
     )
 
     args = parser.parse_args()
@@ -105,6 +164,26 @@ def main():
             housekeeping_genes_path=args.housekeeping_genes,
             library_id=args.library_id,
             patch_size=args.patch_size,
+            device=args.device,
+        )
+    elif args.model == "stpath":
+        from src.adapters.stpath import run
+
+        run(
+            input_path=args.input,
+            output_dir=args.output,
+            model_dir=args.model_dir,
+            gigapath_h5=args.gigapath_h5,
+            spatial_dir=args.spatial_dir,
+            fullres_image=args.fullres_image,
+            library_id=args.library_id,
+            patch_px=args.patch_px,
+            gigapath_cache=args.gigapath_cache,
+            gigapath_batch_size=args.gigapath_batch_size,
+            gigapath_precision=args.gigapath_precision,
+            organ_type=args.organ_type,
+            tech_type=args.tech_type,
+            save_imputed_expression=args.save_imputed_expression,
             device=args.device,
         )
     elif args.model == "nicheformer":

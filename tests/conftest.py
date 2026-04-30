@@ -16,6 +16,7 @@ import scipy.sparse as sp
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODEL_DIR = PROJECT_ROOT / "models" / "scgpt_spatial"
 LOKI_MODEL_DIR = PROJECT_ROOT / "models" / "loki"
+STPATH_MODEL_DIR = PROJECT_ROOT / "model_weights" / "stpath"
 DATA_DIR = PROJECT_ROOT / "data"
 SAMPLE_H5AD = DATA_DIR / "GSE244084" / "GSM7806336" / "GSM7806336.h5ad"
 SAMPLE_SPATIAL_DIR = DATA_DIR / "GSE244084" / "GSM7806336" / "GSM7806336_spatial"
@@ -29,6 +30,21 @@ def _has_loki_weights() -> bool:
     return (LOKI_MODEL_DIR / "checkpoint.pt").exists()
 
 
+def _has_stpath_weights() -> bool:
+    has_weights = (STPATH_MODEL_DIR / "stfm.pth").exists() or (STPATH_MODEL_DIR / "stpath.pkl").exists()
+    return has_weights and (STPATH_MODEL_DIR / "symbol2ensembl.json").exists()
+
+
+def _has_gigapath_runtime() -> bool:
+    """Both ``timm`` and an HF token must be present to actually download
+    Prov-Gigapath weights at test time."""
+    try:
+        import timm  # noqa: F401
+    except ImportError:
+        return False
+    return bool(os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN"))
+
+
 def _has_sample_data() -> bool:
     return SAMPLE_H5AD.exists()
 
@@ -40,6 +56,14 @@ requires_model_weights = pytest.mark.skipif(
 requires_loki_weights = pytest.mark.skipif(
     not _has_loki_weights(),
     reason="Loki weights not found at models/loki/checkpoint.pt",
+)
+requires_stpath_weights = pytest.mark.skipif(
+    not _has_stpath_weights(),
+    reason="STPath weights not found at model_weights/stpath/",
+)
+requires_gigapath_weights = pytest.mark.skipif(
+    not _has_gigapath_runtime(),
+    reason="Prov-Gigapath runtime requires `timm` installed and an HF_TOKEN with the prov-gigapath EULA accepted.",
 )
 requires_sample_data = pytest.mark.skipif(
     not _has_sample_data(),
