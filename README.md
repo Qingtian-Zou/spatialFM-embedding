@@ -22,9 +22,6 @@ pip install -r requirements.txt
 Download model weights:
  - `model_weights/scgpt_spatial/`: [scGPT-spatial weights](https://github.com/bowang-lab/scGPT-spatial?tab=readme-ov-file#-model-weights-)
  - `model_weights/loki/`: [Loki weights](https://github.com/GuangyuWangLab2021/Loki?tab=readme-ov-file#pretrained-weights) &rarr; [checkpoint.pt](https://huggingface.co/WangGuangyuLab/Loki/blob/main/checkpoint.pt)
- - `model_weights/nicheformer/`:
-   - [Nicheformer checkpoint](https://github.com/theislab/nicheformer#pretraining-weights)
-   - [required artifacts](https://github.com/theislab/nicheformer/tree/main/data/model_means)
 
 ```
 model_weights/
@@ -37,7 +34,7 @@ model_weights/
     checkpoint.pt        # 7.2 GB checkpoint
 ```
 
-**Additional requirements for Nicheformer** — Download the [Nicheformer checkpoint](https://github.com/theislab/nicheformer#pretraining-weights) and needed artifacts [model_means](https://github.com/theislab/nicheformer/tree/main/data/model_means), and then run the one-time conversion script:
+**Weight conversion for Nicheformer** — Download the [Nicheformer checkpoint](https://github.com/theislab/nicheformer#pretraining-weights) and needed artifacts [model_means](https://github.com/theislab/nicheformer/tree/main/data/model_means), and then run the one-time conversion script:
 
 ```bash
 # One-time conversion from provided Lightning checkpoint to pure PyTorch
@@ -102,12 +99,6 @@ python src/embed.py \
 | `--max-length` | `1200` | Maximum sequence length |
 | `--batch-size` | `64` | Batch size for inference |
 
-#### Nicheformer-specific Options
-
-| Flag | Default | Description |
-|---|---|---|
-| `--technology` | `dissociated` | Platform for normalization: `cosmx`, `dissociated`, `iss`, `merfish`, or `xenium` |
-
 #### Loki-specific Options
 
 | Flag | Default | Description |
@@ -126,6 +117,12 @@ spatial/
   tissue_positions.csv     # barcode-to-pixel coordinate mapping
 ```
 
+#### Nicheformer-specific Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--technology` | `dissociated` | Platform for normalization: `cosmx`, `dissociated`, `iss`, `merfish`, or `xenium` |
+
 ### Output Formats
 
 Each run produces four output files: `.h5ad`, `.npy`, `.csv`, and `.tsv`.
@@ -141,21 +138,17 @@ src/
   embed.py              # CLI entry point
   adapters/
     scgpt_spatial.py    # scGPT-spatial adapter
-    nicheformer.py      # Nicheformer adapter
     loki.py             # Loki adapter (text + image paths)
+    nicheformer.py      # Nicheformer adapter
   models/
     scgpt_spatial/      # model code (with patches for torchtext and flash_attn compatibility)
-    nicheformer/        # Nicheformer model code (pure nn.Module, ported from Lightning)
     loki/               # Loki model code (COCA ViT-L-14)
+    nicheformer/        # Nicheformer model code (pure nn.Module, ported from Lightning)
 ```
 
 ### scGPT-spatial Pipeline
 
 Input `.h5ad` &rarr; slide-level mean normalization &rarr; per-gene population z-score &rarr; 51-bin quantile binning &rarr; tokenization via `GeneVocab` &rarr; transformer inference &rarr; 512-dim cell embeddings stored in `adata.obsm["X_scgpt_spatial"]`.
-
-### Nicheformer Pipeline
-
-Input `.h5ad` (Ensembl gene IDs) &rarr; gene alignment to 20,310-gene vocabulary &rarr; library-size normalization (10k) &rarr; platform-specific median normalization &rarr; rank tokenization (top genes by expression) &rarr; 12-layer transformer inference &rarr; mean-pooled 512-dim cell embeddings stored in `adata.obsm["X_nicheformer"]`.
 
 ### Loki Pipeline
 
@@ -164,6 +157,10 @@ Input `.h5ad` (Ensembl gene IDs) &rarr; gene alignment to 20,310-gene vocabulary
 **Image path** (produced when spatial data is available — either inside the input `.h5ad` or supplied via `--spatial-dir`): H&E image &rarr; per-cell patch extraction using spatial coordinates &rarr; COCA image encoder &rarr; 768-dim embeddings stored in `adata.obsm["X_loki_image"]`.
 
 The saved per-spot patches are 3-channel RGB **uint8** PNGs because OmiCLIP's image transform (`Resize → CenterCrop → ToTensor → OpenAI-CLIP Normalize`) is calibrated for that format — `ToTensor` divides uint8 PIL pixels by 255 internally. The adapter's `_resolve_spatial` normalizes the hires image to uint8 RGB at load time, so both input routes (Visium PNG via `PIL.Image.open` and the in-memory cache from `adata.uns['spatial']`) produce equivalent patches regardless of the source dtype (uint8, float `[0, 1]`, uint16) or channel count (RGB or RGBA).
+
+### Nicheformer Pipeline
+
+Input `.h5ad` (Ensembl gene IDs) &rarr; gene alignment to 20,310-gene vocabulary &rarr; library-size normalization (10k) &rarr; platform-specific median normalization &rarr; rank tokenization (top genes by expression) &rarr; 12-layer transformer inference &rarr; mean-pooled 512-dim cell embeddings stored in `adata.obsm["X_nicheformer"]`.
 
 ### Patches Applied to Upstream Code
 
