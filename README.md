@@ -45,7 +45,7 @@ python scripts/convert_nicheformer_ckpt.py \
   --output-dir model_weights/nicheformer
 ```
 
-The script expects the input directory to contain `nicheformer.ckpt` and npy files from `model_means` (the standard layout produced by the upstream download). To override individual paths for non-standard layouts, use `--ckpt <path>` and/or `--means-dir <path>`.
+The script expects the input directory to contain `nicheformer.ckpt` and files from `model_means` (the standard layout produced by the upstream download). To override individual paths for non-standard layouts, use `--ckpt <path>` and/or `--means-dir <path>`.
 
 This produces `model_weights/nicheformer/`:
 
