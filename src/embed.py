@@ -61,7 +61,7 @@ def main():
     parser.add_argument(
         "--spatial-dir",
         default=None,
-        help="(loki, stpath) Path to a Visium spatial/ folder. For loki: overrides spatial data in the input .h5ad (falls back to h5ad on read failure). For stpath: source folder for inline Gigapath feature extraction when --gigapath-h5 is not given.",
+        help="(loki, stpath) Path to a Visium spatial/ folder. For loki: overrides spatial data in the input .h5ad (falls back to h5ad on read failure). For stpath: source folder for inline Gigapath feature extraction when --gigapath-h5 is not given, and a fallback for adata.obsm['spatial'] (loaded from tissue_positions.csv) when the input h5ad lacks spatial coordinates.",
     )
     parser.add_argument(
         "--housekeeping-genes",

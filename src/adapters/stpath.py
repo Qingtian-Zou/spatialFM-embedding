@@ -50,6 +50,50 @@ def _to_dense_float32(x) -> np.ndarray:
     return np.asarray(x, dtype=np.float32)
 
 
+def _attach_spatial_from_dir(adata: AnnData, spatial_dir: str) -> None:
+    """Populate ``adata.obsm['spatial']`` from a Visium ``spatial/`` folder.
+
+    Reads ``tissue_positions.csv`` (v2 headered) or falls back to the legacy
+    headerless ``tissue_positions_list.csv``, intersects on barcode, and writes
+    full-resolution ``(col, row)`` pixel coords — same convention used downstream
+    by ``_load_visium_folder`` in ``src/models/stpath/gigapath.py``.
+    """
+    sd = Path(spatial_dir)
+    pos_path = sd / "tissue_positions.csv"
+    if pos_path.exists():
+        pos = pd.read_csv(pos_path).set_index("barcode")
+    else:
+        legacy = sd / "tissue_positions_list.csv"
+        if not legacy.exists():
+            raise FileNotFoundError(
+                f"Neither tissue_positions.csv nor tissue_positions_list.csv "
+                f"found in {spatial_dir}."
+            )
+        pos = pd.read_csv(
+            legacy,
+            header=None,
+            names=[
+                "barcode", "in_tissue", "array_row", "array_col",
+                "pxl_row_in_fullres", "pxl_col_in_fullres",
+            ],
+        ).set_index("barcode")
+
+    common = adata.obs_names.intersection(pos.index)
+    if len(common) == 0:
+        raise ValueError(
+            f"No shared barcodes between adata and tissue_positions in "
+            f"{spatial_dir}; check that --spatial-dir corresponds to this h5ad."
+        )
+    missing = len(adata.obs_names) - len(common)
+    if missing:
+        print(f"[stpath] {missing} barcodes lack spatial coords; dropping them.")
+    adata._inplace_subset_obs(common)
+    pos = pos.loc[adata.obs_names]
+    adata.obsm["spatial"] = pos[
+        ["pxl_col_in_fullres", "pxl_row_in_fullres"]
+    ].to_numpy()
+
+
 def _load_or_compute_gigapath(
     *,
     adata: AnnData,
@@ -201,12 +245,18 @@ def run(
     adata = sc.read_h5ad(input_path)
     adata.var_names_make_unique()
 
-    # 1) Validate spatial coordinates (PR5 — fail fast).
+    # 1) Validate spatial coordinates; fall back to --spatial-dir when missing.
     if "spatial" not in adata.obsm:
-        raise ValueError(
-            "STPath requires spatial coordinates in adata.obsm['spatial']. "
-            "Got AnnData with obsm keys: " + repr(list(adata.obsm.keys()))
-        )
+        if spatial_dir is not None:
+            _attach_spatial_from_dir(adata, spatial_dir)
+        else:
+            raise ValueError(
+                "STPath requires spatial coordinates in adata.obsm['spatial']. "
+                "Pass --spatial-dir <visium_folder> to load them from "
+                "tissue_positions.csv, or populate adata.obsm['spatial'] "
+                "upstream. Got AnnData with obsm keys: "
+                + repr(list(adata.obsm.keys()))
+            )
     spatial = np.asarray(adata.obsm["spatial"])
     if spatial.ndim != 2 or spatial.shape[1] != 2:
         raise ValueError(

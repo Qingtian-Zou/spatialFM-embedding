@@ -20,7 +20,7 @@ import pytest
 import scipy.sparse as sp
 import torch
 
-from src.adapters.stpath import run as stpath_run
+from src.adapters.stpath import _attach_spatial_from_dir, run as stpath_run
 from src.models.stpath.gigapath import (
     resolve_he_inputs,
     save_gigapath_h5,
@@ -223,6 +223,182 @@ class TestValidation:
                 output_dir=str(tmp_path / "out"),
                 model_dir=str(model_dir),
                 gigapath_h5=str(tmp_path / "nonexistent.h5"),
+                device="cpu",
+            )
+
+
+# ---------------------------------------------------------------------------
+# Spatial-dir fallback — populates obsm["spatial"] from tissue_positions.csv
+# ---------------------------------------------------------------------------
+
+class TestSpatialDirFallback:
+    def _write_tissue_positions_csv(self, spatial_dir, barcodes, rows, cols):
+        spatial_dir.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(
+            {
+                "barcode": barcodes,
+                "in_tissue": 1,
+                "array_row": np.arange(len(barcodes)),
+                "array_col": np.arange(len(barcodes)),
+                "pxl_row_in_fullres": rows,
+                "pxl_col_in_fullres": cols,
+            }
+        ).to_csv(spatial_dir / "tissue_positions.csv", index=False)
+
+    def test_helper_populates_spatial_with_col_row_order(self, tmp_path):
+        adata = _make_synthetic_adata(n_spots=5, with_spatial=False)
+        rows = np.array([10, 20, 30, 40, 50])
+        cols = np.array([100, 200, 300, 400, 500])
+        spatial_dir = tmp_path / "spatial"
+        self._write_tissue_positions_csv(spatial_dir, list(adata.obs_names), rows, cols)
+
+        _attach_spatial_from_dir(adata, str(spatial_dir))
+
+        assert "spatial" in adata.obsm
+        assert adata.obsm["spatial"].shape == (5, 2)
+        # Column 0 = pxl_col_in_fullres, column 1 = pxl_row_in_fullres.
+        np.testing.assert_array_equal(adata.obsm["spatial"][:, 0], cols)
+        np.testing.assert_array_equal(adata.obsm["spatial"][:, 1], rows)
+
+    def test_helper_drops_unmatched_barcodes(self, tmp_path):
+        adata = _make_synthetic_adata(n_spots=5, with_spatial=False)
+        # tissue_positions covers only barcodes 1..3 plus an extra unrelated one.
+        present = list(adata.obs_names[1:4])
+        extra = ["UNRELATED_BC"]
+        rows = np.array([11, 22, 33, 99])
+        cols = np.array([110, 220, 330, 990])
+        spatial_dir = tmp_path / "spatial"
+        self._write_tissue_positions_csv(spatial_dir, present + extra, rows, cols)
+
+        _attach_spatial_from_dir(adata, str(spatial_dir))
+
+        assert adata.n_obs == 3
+        assert list(adata.obs_names) == present
+        np.testing.assert_array_equal(adata.obsm["spatial"][:, 0], [110, 220, 330])
+        np.testing.assert_array_equal(adata.obsm["spatial"][:, 1], [11, 22, 33])
+
+    def test_helper_raises_on_no_shared_barcodes(self, tmp_path):
+        adata = _make_synthetic_adata(n_spots=3, with_spatial=False)
+        spatial_dir = tmp_path / "spatial"
+        self._write_tissue_positions_csv(
+            spatial_dir,
+            ["DISJOINT_0", "DISJOINT_1"],
+            np.array([1, 2]),
+            np.array([3, 4]),
+        )
+
+        with pytest.raises(ValueError, match="No shared barcodes"):
+            _attach_spatial_from_dir(adata, str(spatial_dir))
+
+    def test_helper_falls_back_to_legacy_headerless_csv(self, tmp_path):
+        adata = _make_synthetic_adata(n_spots=4, with_spatial=False)
+        spatial_dir = tmp_path / "spatial"
+        spatial_dir.mkdir()
+        # Legacy v1: headerless tissue_positions_list.csv with fixed column order.
+        rows = np.array([7, 8, 9, 10])
+        cols = np.array([70, 80, 90, 100])
+        df = pd.DataFrame(
+            {
+                "barcode": list(adata.obs_names),
+                "in_tissue": 1,
+                "array_row": np.arange(4),
+                "array_col": np.arange(4),
+                "pxl_row_in_fullres": rows,
+                "pxl_col_in_fullres": cols,
+            }
+        )
+        df.to_csv(spatial_dir / "tissue_positions_list.csv", header=False, index=False)
+
+        _attach_spatial_from_dir(adata, str(spatial_dir))
+        np.testing.assert_array_equal(adata.obsm["spatial"][:, 0], cols)
+        np.testing.assert_array_equal(adata.obsm["spatial"][:, 1], rows)
+
+    def test_helper_raises_when_no_positions_file(self, tmp_path):
+        adata = _make_synthetic_adata(n_spots=3, with_spatial=False)
+        spatial_dir = tmp_path / "empty_spatial"
+        spatial_dir.mkdir()
+
+        with pytest.raises(FileNotFoundError, match="tissue_positions"):
+            _attach_spatial_from_dir(adata, str(spatial_dir))
+
+    def test_adapter_uses_fallback_when_spatial_missing(self, tmp_path):
+        """End-to-end: input h5ad lacks obsm['spatial'] but --spatial-dir provides it."""
+        model_dir = _make_synthetic_model_dir(tmp_path)
+        adata = _make_synthetic_adata(n_spots=4, with_spatial=False)
+        h5ad = tmp_path / "in.h5ad"
+        adata.write_h5ad(h5ad)
+
+        spatial_dir = tmp_path / "spatial"
+        rows = np.array([10, 20, 30, 40])
+        cols = np.array([100, 200, 300, 400])
+        self._write_tissue_positions_csv(
+            spatial_dir, list(adata.obs_names), rows, cols
+        )
+        gp = tmp_path / "gp.h5"
+        _write_gigapath_h5(gp, adata.obs_names.tolist())
+
+        result = stpath_run(
+            input_path=str(h5ad),
+            output_dir=str(tmp_path / "out"),
+            model_dir=str(model_dir),
+            gigapath_h5=str(gp),
+            spatial_dir=str(spatial_dir),
+            device="cpu",
+        )
+        assert result.obsm["X_stpath"].shape == (4, _OUT_DIM)
+        # Verify the loaded coords carry through (col, row).
+        np.testing.assert_array_equal(result.obsm["spatial"][:, 0], cols)
+        np.testing.assert_array_equal(result.obsm["spatial"][:, 1], rows)
+
+    def test_existing_spatial_is_not_overridden_by_spatial_dir(self, tmp_path, monkeypatch):
+        """If obsm['spatial'] is already populated, the fallback must not run."""
+        model_dir = _make_synthetic_model_dir(tmp_path)
+        adata = _make_synthetic_adata(n_spots=4, with_spatial=True)
+        h5ad = tmp_path / "in.h5ad"
+        adata.write_h5ad(h5ad)
+
+        spatial_dir = tmp_path / "spatial"
+        self._write_tissue_positions_csv(
+            spatial_dir,
+            list(adata.obs_names),
+            rows=np.array([1, 2, 3, 4]),
+            cols=np.array([5, 6, 7, 8]),
+        )
+        gp = tmp_path / "gp.h5"
+        _write_gigapath_h5(gp, adata.obs_names.tolist())
+
+        calls = {"attach": 0}
+
+        def spy(*args, **kwargs):
+            calls["attach"] += 1
+
+        monkeypatch.setattr("src.adapters.stpath._attach_spatial_from_dir", spy)
+
+        result = stpath_run(
+            input_path=str(h5ad),
+            output_dir=str(tmp_path / "out"),
+            model_dir=str(model_dir),
+            gigapath_h5=str(gp),
+            spatial_dir=str(spatial_dir),
+            device="cpu",
+        )
+        assert calls["attach"] == 0
+        assert result.obsm["X_stpath"].shape == (4, _OUT_DIM)
+
+    def test_error_message_mentions_spatial_dir_when_both_missing(self, tmp_path):
+        model_dir = _make_synthetic_model_dir(tmp_path)
+        adata = _make_synthetic_adata(n_spots=4, with_spatial=False)
+        h5ad = tmp_path / "in.h5ad"
+        adata.write_h5ad(h5ad)
+        gp = tmp_path / "gp.h5"
+        _write_gigapath_h5(gp, adata.obs_names.tolist())
+
+        with pytest.raises(ValueError, match="--spatial-dir"):
+            stpath_run(
+                input_path=str(h5ad),
+                output_dir=str(tmp_path / "out"),
+                model_dir=str(model_dir),
+                gigapath_h5=str(gp),
                 device="cpu",
             )
 
