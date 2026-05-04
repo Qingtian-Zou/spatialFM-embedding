@@ -511,6 +511,79 @@ class TestInlineGigapathDispatch:
         )
         assert result.obsm["X_stpath"].shape == (4, _OUT_DIM)
 
+    def test_recompute_flag_invalidates_cache(self, tmp_path, monkeypatch):
+        """With gigapath_recompute=True the adapter must bypass the cache,
+        invoke the inline encoder, and overwrite the sidecar in place."""
+        model_dir = _make_synthetic_model_dir(tmp_path)
+        adata = _make_synthetic_adata(n_spots=4)
+        h5ad = tmp_path / "in.h5ad"
+        adata.write_h5ad(h5ad)
+        barcodes = adata.obs_names.tolist()
+
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        cache_path = out_dir / "gigapath_features.h5"
+        _write_gigapath_h5(cache_path, barcodes)
+        with h5py.File(cache_path, "r") as f:
+            seeded_embeddings = f["embeddings"][:].copy()
+
+        fake_embeddings = np.full((len(barcodes), _FEATURE_DIM), 0.5, dtype=np.float32)
+        fake_coord_df = pd.DataFrame(
+            {
+                "pixel_x": np.arange(len(barcodes), dtype=np.float32),
+                "pixel_y": np.arange(len(barcodes), dtype=np.float32),
+            },
+            index=barcodes,
+        )
+        calls = {"resolve": 0, "compute": 0}
+
+        def fake_resolve(**kwargs):
+            calls["resolve"] += 1
+            return np.zeros((1, 1, 3), dtype=np.uint8), fake_coord_df, 16, "fake"
+
+        def fake_compute(**kwargs):
+            calls["compute"] += 1
+            return fake_embeddings, list(barcodes)
+
+        monkeypatch.setattr("src.adapters.stpath.resolve_he_inputs", fake_resolve)
+        monkeypatch.setattr("src.adapters.stpath.compute_gigapath_features", fake_compute)
+
+        result = stpath_run(
+            input_path=str(h5ad),
+            output_dir=str(out_dir),
+            model_dir=str(model_dir),
+            gigapath_recompute=True,
+            device="cpu",
+        )
+
+        assert calls["resolve"] == 1, "resolve_he_inputs not invoked despite force flag"
+        assert calls["compute"] == 1, "compute_gigapath_features not invoked despite force flag"
+        assert result.obsm["X_stpath"].shape == (4, _OUT_DIM)
+
+        with h5py.File(cache_path, "r") as f:
+            recomputed = f["embeddings"][:]
+        assert np.allclose(recomputed, fake_embeddings)
+        assert not np.allclose(recomputed, seeded_embeddings)
+
+    def test_recompute_with_explicit_sidecar_raises(self, tmp_path):
+        """--gigapath-h5 + --gigapath-recompute is contradictory; fail fast."""
+        model_dir = _make_synthetic_model_dir(tmp_path)
+        adata = _make_synthetic_adata(n_spots=4)
+        h5ad = tmp_path / "in.h5ad"
+        adata.write_h5ad(h5ad)
+        gp = tmp_path / "gp.h5"
+        _write_gigapath_h5(gp, adata.obs_names.tolist())
+
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            stpath_run(
+                input_path=str(h5ad),
+                output_dir=str(tmp_path / "out"),
+                model_dir=str(model_dir),
+                gigapath_h5=str(gp),
+                gigapath_recompute=True,
+                device="cpu",
+            )
+
 
 # ---------------------------------------------------------------------------
 # Real-data tests — gated by weights and sample data availability

@@ -56,6 +56,7 @@ def _load_or_compute_gigapath(
     output_dir: str,
     gigapath_h5: Optional[str],
     gigapath_cache: Optional[str],
+    gigapath_recompute: bool,
     spatial_dir: Optional[str],
     fullres_image: Optional[str],
     library_id: Optional[str],
@@ -69,9 +70,18 @@ def _load_or_compute_gigapath(
     Resolution order:
     1. If ``gigapath_h5`` is given, load it (fail fast if missing).
     2. Else if a cache exists at ``gigapath_cache`` (default
-       ``<output_dir>/gigapath_features.h5``), load it.
-    3. Else compute features in-process and write the cache for next time.
+       ``<output_dir>/gigapath_features.h5``) and ``gigapath_recompute`` is
+       False, load it.
+    3. Else compute features in-process and write the cache (overwriting any
+       existing file) for next time.
     """
+    if gigapath_h5 and gigapath_recompute:
+        raise ValueError(
+            "--gigapath-h5 and --gigapath-recompute are mutually exclusive: "
+            "one supplies a precomputed sidecar to use as-is, the other forces "
+            "the adapter to recompute and overwrite the cache. Pick one."
+        )
+
     if gigapath_h5:
         gigapath_path = Path(gigapath_h5)
         if not gigapath_path.exists():
@@ -81,15 +91,20 @@ def _load_or_compute_gigapath(
         return assets
 
     cache_path = Path(gigapath_cache) if gigapath_cache else Path(output_dir) / "gigapath_features.h5"
-    if cache_path.exists():
+    if cache_path.exists() and not gigapath_recompute:
         print(f"[stpath] Reusing cached Gigapath features from {cache_path}")
         assets, _ = read_assets_from_h5(str(cache_path))
         return assets
-
-    print(
-        "[stpath] No Gigapath sidecar provided; computing features inline "
-        "(this is a one-time cost, then cached)."
-    )
+    if cache_path.exists() and gigapath_recompute:
+        print(
+            f"[stpath] --gigapath-recompute set; ignoring cache at {cache_path} "
+            "and recomputing."
+        )
+    else:
+        print(
+            "[stpath] No Gigapath sidecar provided; computing features inline "
+            "(this is a one-time cost, then cached)."
+        )
     image, coord_df, resolved_patch_px, source_tag = resolve_he_inputs(
         adata=adata,
         spatial_dir=spatial_dir,
@@ -126,6 +141,7 @@ def run(
     library_id: Optional[str] = None,
     patch_px: Optional[int] = None,
     gigapath_cache: Optional[str] = None,
+    gigapath_recompute: bool = False,
     gigapath_batch_size: int = 32,
     gigapath_precision: str = "fp32",
     organ_type: str = "Others",
@@ -157,6 +173,9 @@ def run(
             scalefactors (scaled when falling back to the hires image).
         gigapath_cache: Optional sidecar path to read/write when ``gigapath_h5``
             is not supplied. Defaults to ``<output_dir>/gigapath_features.h5``.
+        gigapath_recompute: If True, ignore any cache at ``gigapath_cache`` and
+            recompute Gigapath features inline, overwriting the sidecar in
+            place. Mutually exclusive with ``gigapath_h5``.
         gigapath_batch_size: Mini-batch size for Gigapath inference (default 32).
         gigapath_precision: ``"fp32"`` or ``"fp16"`` for inline encoding.
 
@@ -200,6 +219,7 @@ def run(
         output_dir=output_dir,
         gigapath_h5=gigapath_h5,
         gigapath_cache=gigapath_cache,
+        gigapath_recompute=gigapath_recompute,
         spatial_dir=spatial_dir,
         fullres_image=fullres_image,
         library_id=library_id,

@@ -121,6 +121,13 @@ def main():
              "not supplied (default: <output>/gigapath_features.h5).",
     )
     parser.add_argument(
+        "--gigapath-recompute",
+        action="store_true",
+        help="(stpath) Force re-computation of the Gigapath sidecar .h5 even "
+             "if a cache exists at --gigapath-cache. The sidecar is overwritten "
+             "in place. Mutually exclusive with --gigapath-h5.",
+    )
+    parser.add_argument(
         "--organ-type",
         default="Others",
         help="(stpath) Organ token (default: Others). One of 25 values from "
@@ -179,6 +186,7 @@ def main():
             library_id=args.library_id,
             patch_px=args.patch_px,
             gigapath_cache=args.gigapath_cache,
+            gigapath_recompute=args.gigapath_recompute,
             gigapath_batch_size=args.gigapath_batch_size,
             gigapath_precision=args.gigapath_precision,
             organ_type=args.organ_type,

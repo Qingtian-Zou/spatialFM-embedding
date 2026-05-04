@@ -21,7 +21,7 @@ class FrameAveraging(nn.Module):
         for ind in range(dim):
             dim_slice = [None] * dim
             dim_slice[ind] = colon
-            accum.append(directions[dim_slice])
+            accum.append(directions[tuple(dim_slice)])
 
         accum = torch.broadcast_tensors(*accum)
         operations = torch.stack(accum, dim=-1)

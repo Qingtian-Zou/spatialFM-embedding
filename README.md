@@ -47,7 +47,7 @@ These files are gitignored and must be obtained separately.
 
 STPath consumes 1536-d tile features from [prov-gigapath](https://github.com/prov-gigapath/prov-gigapath), a ~1.5B-parameter H&E tile encoder. **Gigapath is loaded from a gated HuggingFace repo** — accept the EULA at [prov-gigapath/prov-gigapath](https://huggingface.co/prov-gigapath/prov-gigapath) and run `huggingface-cli login` (or set `HF_TOKEN`).
 
-The adapter computes Gigapath features inline by default and caches them to `<output>/gigapath_features.h5`. Subsequent runs against the same output directory reuse the cache (no recomputation). You can:
+The adapter computes Gigapath features inline by default and caches them to `<output>/gigapath_features.h5`. Subsequent runs against the same output directory reuse the cache (no recomputation). The cache hit is decided by file existence alone — no automatic invalidation on input or parameter changes — so pass `--gigapath-recompute` to force re-encoding and overwrite a stale sidecar. You can:
 
 - Provide a Visium spatial folder via `--spatial-dir` (uses `tissue_fullres_image.*` if present, else falls back to `tissue_hires_image.png` with a quality warning).
 - Or pass an explicit `--fullres-image PATH` (strongly preferred — Gigapath was trained on ~0.5 mpp pathology tiles).
@@ -130,6 +130,7 @@ python src/embed.py \
 | `--gigapath-batch-size` | `32` | Batch size for inline Gigapath inference |
 | `--gigapath-precision` | `fp32` | `fp32` or `fp16` for inline Gigapath inference |
 | `--gigapath-cache` | *(auto)* | Sidecar cache path written/read when `--gigapath-h5` is not supplied (default: `<output>/gigapath_features.h5`) |
+| `--gigapath-recompute` | off | Force re-computation of the Gigapath sidecar `.h5` even when a cache exists at `--gigapath-cache`; overwrites in place. Mutually exclusive with `--gigapath-h5`. |
 | `--organ-type` | `Others` | One of 25 STPath organ tokens (e.g. `Kidney`, `Brain`, `Lung`, `Breast`, `Liver`, `Heart`, ...; see `src/models/stpath/utils/constants.py:organ_voc`) |
 | `--tech-type` | *(pad)* | One of `Spatial Transcriptomics`, `Visium`, `Xenium`, `Visium HD` |
 | `--save-imputed-expression` | off | Also write `imputed_expression.h5ad` with the model's refined log1p expression on STPath's 38,984-gene vocabulary |
