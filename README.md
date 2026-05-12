@@ -64,6 +64,27 @@ The sidecar (whether produced by the adapter or supplied externally) follows thi
 
 The adapter aligns the gigapath sidecar to the AnnData by barcode intersection.
 
+**When the sidecar is safe to reuse.** The cached embeddings are a function of *the per-spot pixel crops fed to the encoder*. Anything that changes those crops invalidates the cache; anything that doesn't is free to vary between runs. The adapter never checks this, so please pass `--gigapath-recompute` (or delete the sidecar) when an invalidating input changes.
+
+Requires recomputation (`--gigapath-recompute`):
+
+| Change | Why it invalidates |
+|---|---|
+| Different H&E image (`--fullres-image`, `--spatial-dir`, or `adata.uns['spatial'][lib]['images']`) | Crops are sampled from a different image. |
+| Different `adata.obsm['spatial']` coordinates for the same barcodes | Crops are centered on different pixels. |
+| Different `--patch-px`, or different `spot_diameter_fullres` in the Visium `scalefactors_json.json` | Crop side length changes. |
+| Switching from fullres to hires (or vice versa) for the same `--spatial-dir` | Image pixel space and the auto-scaled `patch_px` both change. |
+| Different `--library-id` when `adata.uns['spatial']` has multiple entries | A different image entry may be selected. |
+
+Safe to change without recomputation (these don't affect the cached values):
+
+- `--gigapath-batch-size` — throughput only.
+- `--gigapath-precision` (`fp32` ↔ `fp16`) — note: a cached sidecar keeps the precision it was originally written with; toggling the flag will *not* trigger a re-encode at the new precision.
+- `--device` (`cuda` ↔ `cpu`) — same outputs modulo float rounding.
+- STPath-side knobs that never touch Gigapath: `--organ-type`, `--tech-type`, `--save-imputed-expression`, the STPath weights in `--model-dir`.
+
+**Subset / superset of barcodes.** Alignment is by barcode intersection ([src/adapters/stpath.py:305](src/adapters/stpath.py#L305)). A cached sidecar with *more* barcodes than the current AnnData is fine — extras are ignored. A cached sidecar with *fewer* barcodes than the current AnnData will silently subset the AnnData down to the intersection (a one-line `[stpath] Barcode alignment: N/M` log is the only signal). If you've *added* spots since the cache was written, please recompute by passing `--gigapath-recompute`.
+
 ## Usage
 
 ```bash
