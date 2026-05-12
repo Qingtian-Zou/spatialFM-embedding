@@ -172,7 +172,7 @@ def get_batch_cell_embeddings(
         amp_ctx = torch.amp.autocast("cuda") if use_amp else contextlib.nullcontext()
         with torch.no_grad(), amp_ctx:
             count = 0
-            for data_dict in tqdm(data_loader, desc="Embedding cells"):
+            for data_dict in tqdm(data_loader, desc="Embedding cells", ascii=True):
                 input_gene_ids = data_dict["gene"].to(device)
                 src_key_padding_mask = input_gene_ids.eq(
                     vocab[model_configs["pad_token"]]

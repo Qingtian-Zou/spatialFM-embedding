@@ -142,6 +142,7 @@ def run(
     housekeeping_genes_path: Optional[str] = None,
     library_id: Optional[str] = None,
     patch_size: int = 16,
+    batch_size: int = 64,
     device: str = "cuda",
 ) -> AnnData:
     """Run Loki text (always) and image (when spatial info available) embedding.
@@ -158,6 +159,8 @@ def run(
             those genes are excluded from the top-50 selection.
         library_id: Library key under ``adata.uns['spatial']`` (default: first).
         patch_size: H&E patch side length in pixels (post-scaling).
+        batch_size: Per-forward-pass batch size for both the text and image
+            encoders.
         device: "cuda" or "cpu".
 
     Returns:
@@ -191,7 +194,9 @@ def run(
     text_df = generate_gene_df(
         adata, hk_df, todense=sp.issparse(adata.X)
     )
-    text_emb = encode_texts(model, tokenizer, text_df["label"].tolist(), device)
+    text_emb = encode_texts(
+        model, tokenizer, text_df["label"].tolist(), device, batch_size=batch_size
+    )
     text_emb = text_emb.cpu().numpy()
     adata.obsm["X_loki_text"] = text_emb
 
@@ -216,7 +221,11 @@ def run(
         if n_dropped:
             print(f"[loki] {n_dropped} patches were out-of-range and will be NaN.")
 
-        img_emb_valid = encode_images(model, preprocess, valid_paths, device).cpu().numpy()
+        img_emb_valid = (
+            encode_images(model, preprocess, valid_paths, device, batch_size=batch_size)
+            .cpu()
+            .numpy()
+        )
         img_emb = np.full((adata.n_obs, img_emb_valid.shape[1]), np.nan, dtype=np.float32)
         img_emb[valid_idx] = img_emb_valid
         adata.obsm["X_loki_image"] = img_emb

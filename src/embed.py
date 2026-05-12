@@ -123,6 +123,7 @@ def main():
             housekeeping_genes_path=args.housekeeping_genes,
             library_id=args.library_id,
             patch_size=args.patch_size,
+            batch_size=args.batch_size,
             device=args.device,
         )
     elif args.model == "nicheformer":

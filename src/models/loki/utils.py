@@ -10,6 +10,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 from open_clip import create_model_from_pretrained, get_tokenizer
+from tqdm import tqdm
 
 
 def load_model(
@@ -30,15 +31,16 @@ def encode_images(
     preprocess: callable,
     image_paths: List[str],
     device: Union[str, torch.device],
+    batch_size: int = 64,
 ) -> torch.Tensor:
     """Batch-encode a list of image file paths into L2-normalized embeddings."""
     image_embeddings = []
-    for image_path in image_paths:
-        image = Image.open(image_path)
-        image_input = torch.stack([preprocess(image)]).to(device)
+    for start in tqdm(range(0, len(image_paths), batch_size), desc="Encoding images", ascii=True):
+        chunk = image_paths[start : start + batch_size]
+        batch = torch.stack([preprocess(Image.open(p)) for p in chunk]).to(device)
         with torch.no_grad():
-            image_features = model.encode_image(image_input)
-        image_embeddings.append(image_features)
+            feats = model.encode_image(batch)
+        image_embeddings.append(feats)
     image_embeddings = torch.cat(image_embeddings, dim=0)
     return F.normalize(image_embeddings, p=2, dim=-1)
 
@@ -48,9 +50,15 @@ def encode_texts(
     tokenizer: callable,
     texts: List[str],
     device: Union[str, torch.device],
+    batch_size: int = 64,
 ) -> torch.Tensor:
     """Batch-encode a list of strings into L2-normalized embeddings."""
-    text_inputs = tokenizer(texts).to(device)
-    with torch.no_grad():
-        feats = model.encode_text(text_inputs)
-    return F.normalize(feats, p=2, dim=-1)
+    text_embeddings = []
+    for start in tqdm(range(0, len(texts), batch_size), desc="Encoding texts", ascii=True):
+        chunk = texts[start : start + batch_size]
+        text_inputs = tokenizer(chunk).to(device)
+        with torch.no_grad():
+            feats = model.encode_text(text_inputs)
+        text_embeddings.append(feats)
+    text_embeddings = torch.cat(text_embeddings, dim=0)
+    return F.normalize(text_embeddings, p=2, dim=-1)
