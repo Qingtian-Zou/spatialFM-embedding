@@ -9,7 +9,7 @@ A unified framework for extracting cell embeddings from spatial omics foundation
 | [**scGPT-spatial**](https://github.com/bowang-lab/scGPT-spatial) | Transformer + MoE | 512 | Implemented |
 | [**Nicheformer**](https://github.com/theislab/nicheformer) | Transformer MLM | 512 | Implemented |
 | [**Loki** (text / image)](https://github.com/GuangyuWangLab2021/Loki) | Vision-language COCA ViT-L-14 | 768 | Implemented |
-| [**STPath**](https://github.com/Graph-and-Geometric-Learning/STPath) | Spatial Transformer (generative) | 512 | Planned |
+| [**STPath**](https://github.com/Graph-and-Geometric-Learning/STPath) | Spatial Transformer (generative) | 512 | Implemented |
 
 ## Setup
 
