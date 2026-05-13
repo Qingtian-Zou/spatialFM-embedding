@@ -173,6 +173,14 @@ python src/embed.py \
 | `--library-id` | *(auto)* | (loki, stpath) Key under `adata.uns['spatial']` (default: first found) |
 | `--patch-size` | `16` | (loki) H&E patch side length in pixels |
 
+#### Nicheformer-specific Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--technology` | `dissociated` | Platform for normalization: `cosmx`, `dissociated`, `iss`, `merfish`, or `xenium` |
+| `--no-symbol-conversion` | *(off — conversion enabled)* | Disable automatic HGNC symbol &rarr; Ensembl ID conversion. Use when input already has Ensembl IDs and you want the run to fail loudly on any non-Ensembl entries. |
+| `--hgnc-mapping` | *(bundled file)* | Path to a custom HGNC TSV (must include `Approved symbol`, `Status`, `Previous symbols`, `Alias symbols`, `Ensembl gene ID` columns). Defaults to the bundled reference at `src/models/nicheformer/HGNC_symbol_all_genes.tsv`. |
+
 #### STPath-specific Options
 
 | Flag | Default | Description |
@@ -196,14 +204,6 @@ spatial/
   tissue_hires_image.png   # high-resolution H&E image
   tissue_positions.csv     # barcode-to-pixel coordinate mapping
 ```
-
-#### Nicheformer-specific Options
-
-| Flag | Default | Description |
-|---|---|---|
-| `--technology` | `dissociated` | Platform for normalization: `cosmx`, `dissociated`, `iss`, `merfish`, or `xenium` |
-| `--no-symbol-conversion` | *(off — conversion enabled)* | Disable automatic HGNC symbol &rarr; Ensembl ID conversion. Use when input already has Ensembl IDs and you want the run to fail loudly on any non-Ensembl entries. |
-| `--hgnc-mapping` | *(bundled file)* | Path to a custom HGNC TSV (must include `Approved symbol`, `Status`, `Previous symbols`, `Alias symbols`, `Ensembl gene ID` columns). Defaults to the bundled reference at `src/models/nicheformer/HGNC_symbol_all_genes.tsv`. |
 
 ### Output Formats
 
