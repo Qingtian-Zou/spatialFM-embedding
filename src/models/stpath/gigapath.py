@@ -26,6 +26,7 @@ import pandas as pd
 import torch
 from anndata import AnnData
 from PIL import Image
+from tqdm import tqdm
 
 # PIL refuses very large H&E images by default; lift the cap.
 Image.MAX_IMAGE_PIXELS = None
@@ -387,7 +388,7 @@ def compute_gigapath_features(
     use_amp = precision == "fp16" and device.type == "cuda"
     out_chunks = []
     with torch.inference_mode():
-        for batch in loader:
+        for batch in tqdm(loader, ascii=True):
             batch = batch.to(device, non_blocking=True)
             if use_amp:
                 with torch.autocast(device_type="cuda", dtype=torch.float16):

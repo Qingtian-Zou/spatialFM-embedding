@@ -55,8 +55,9 @@ def main():
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=64,
-        help="Batch size for inference (default: 64).",
+        default=None,
+        help="Batch size for inference (default: 64). Ignored for --model stpath "
+             "(STFM is all-context); use --gigapath-batch-size there.",
     )
     parser.add_argument(
         "--spatial-dir",
@@ -157,7 +158,7 @@ def main():
             model_dir=args.model_dir,
             gene_col=args.gene_col,
             max_length=args.max_length,
-            batch_size=args.batch_size,
+            batch_size=args.batch_size if args.batch_size is not None else 64,
             device=args.device,
         )
     elif args.model == "loki":
@@ -174,6 +175,13 @@ def main():
             device=args.device,
         )
     elif args.model == "stpath":
+        if args.batch_size is not None:
+            print(
+                "Warning: --batch-size is ignored for --model stpath "
+                "(STFM is all-context). Use --gigapath-batch-size to "
+                "tune inline Gigapath inference.",
+                file=sys.stderr,
+            )
         from src.adapters.stpath import run
 
         run(
