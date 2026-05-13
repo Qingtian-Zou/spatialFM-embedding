@@ -13,9 +13,13 @@ anndata>=0.10
 scanpy>=1.10
 
 # Model-specific
-einops>=0.7            # scGPT-spatial transformer blocks
+einops>=0.7            # scGPT-spatial transformer blocks, STPath spatial transformer
 open_clip_torch>=2.24  # Loki OmiCLIP coca_ViT-L-14
 Pillow>=10.0           # Loki H&E patch I/O
+torch_geometric==2.6.1 # STPath GeneExpTokenizer (lazy-imported on sparse path)
+h5py>=3.0              # STPath Gigapath sidecar reader
+timm>=1.0              # STPath inline Gigapath tile encoder (vit_giant_patch14_dinov2)
+huggingface_hub>=0.24  # STPath inline Gigapath weight download (gated repo)
 
 # Utilities
 tqdm>=4.65
